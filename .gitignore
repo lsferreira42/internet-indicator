@@ -1,1 +1,7 @@
 internet-indicator
+internet-indicator-standalone
+src/icons_embedded.h
+build/
+*.deb
+*.rpm
+*.apk

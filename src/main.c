@@ -19,6 +19,19 @@ static Config  g_config;
 static guint   g_timer_id    = 0;
 static char    g_icon_dir[PATH_MAX];
 
+#ifdef STANDALONE
+#include "icons_embedded.h"
+static char g_standalone_dir[PATH_MAX] = "";
+
+static void cleanup_standalone(void) {
+    if (g_standalone_dir[0]) {
+        char cmd[PATH_MAX + 16];
+        snprintf(cmd, sizeof(cmd), "rm -rf %s", g_standalone_dir);
+        if (system(cmd) == -1) { /* ignore error */ }
+    }
+}
+#endif
+
 #define PING_TIMEOUT 2  /* seconds */
 
 /* ------------------------------------------------------------------ */
@@ -143,6 +156,34 @@ static void on_open_config(void)
 
 static void resolve_icon_dir(void)
 {
+#ifdef STANDALONE
+    char tmpl[] = "/tmp/internet-indicator-XXXXXX";
+    if (mkdtemp(tmpl)) {
+        strncpy(g_icon_dir, tmpl, sizeof(g_icon_dir) - 1);
+        strncpy(g_standalone_dir, tmpl, sizeof(g_standalone_dir) - 1);
+        
+        char path[PATH_MAX];
+        FILE *f;
+        
+        snprintf(path, sizeof(path), "%s/net-good.png", tmpl);
+        f = fopen(path, "wb");
+        if (f) {
+            fwrite(icons_net_good_png, 1, icons_net_good_png_len, f);
+            fclose(f);
+        }
+        
+        snprintf(path, sizeof(path), "%s/net-bad.png", tmpl);
+        f = fopen(path, "wb");
+        if (f) {
+            fwrite(icons_net_bad_png, 1, icons_net_bad_png_len, f);
+            fclose(f);
+        }
+        
+        atexit(cleanup_standalone);
+        return;
+    }
+#endif
+
     /* 1. Check installed location */
     const char *installed = "/usr/local/share/internet-indicator/icons";
     if (g_file_test(installed, G_FILE_TEST_IS_DIR)) {

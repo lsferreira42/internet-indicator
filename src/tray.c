@@ -1,7 +1,11 @@
 #include "tray.h"
 
 #include <gtk/gtk.h>
+#ifdef HAVE_AYATANA
+#include <libayatana-appindicator/app-indicator.h>
+#else
 #include <libappindicator/app-indicator.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 

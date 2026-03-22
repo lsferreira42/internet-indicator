@@ -1,7 +1,12 @@
+APPINDICATOR_PKG ?= $(shell pkg-config --exists ayatana-appindicator3-0.1 && echo ayatana-appindicator3-0.1 || echo appindicator3-0.1)
+
 CC      = gcc
-CFLAGS  = -Wall -Wextra -O2 \
-          $(shell pkg-config --cflags gtk+-3.0 appindicator3-0.1)
-LDFLAGS = $(shell pkg-config --libs gtk+-3.0 appindicator3-0.1)
+CFLAGS  ?= -Wall -Wextra -O2
+CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 $(APPINDICATOR_PKG))
+ifeq ($(APPINDICATOR_PKG),ayatana-appindicator3-0.1)
+  CFLAGS += -DHAVE_AYATANA
+endif
+LDFLAGS += $(shell pkg-config --libs gtk+-3.0 $(APPINDICATOR_PKG))
 
 SRCDIR  = src
 SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/tray.c
@@ -20,6 +25,9 @@ $(TARGET): $(SOURCES)
 
 clean:
 	rm -f $(TARGET)
+	rm -f $(TARGET)-standalone
+	rm -f src/icons_embedded.h
+	rm -rf build/
 
 install: $(TARGET)
 	install -Dm755 $(TARGET) $(DESTDIR)$(INSTALL_BIN)/$(TARGET)
@@ -37,3 +45,47 @@ uninstall:
 autostart:
 	install -Dm644 internet-indicator.desktop $(HOME)/.config/autostart/internet-indicator.desktop
 	@echo "Autostart entry installed."
+
+distributable:
+	@echo "Generating embedded icons headers..."
+	xxd -i icons/net-good.png > src/icons_embedded.h
+	xxd -i icons/net-bad.png >> src/icons_embedded.h
+	$(CC) $(CFLAGS) -DSTANDALONE -o $(TARGET)-standalone $(SOURCES) $(LDFLAGS)
+	@echo "Standalone binary created: $(TARGET)-standalone"
+
+deb: distributable
+	@echo "Building DEB..."
+	mkdir -p build/deb/internet-indicator_1.0_amd64/DEBIAN
+	mkdir -p build/deb/internet-indicator_1.0_amd64/usr/bin
+	mkdir -p build/deb/internet-indicator_1.0_amd64/usr/share/applications
+	cp packaging/internet-indicator.control build/deb/internet-indicator_1.0_amd64/DEBIAN/control
+	cp internet-indicator-standalone build/deb/internet-indicator_1.0_amd64/usr/bin/internet-indicator
+	cp internet-indicator.desktop build/deb/internet-indicator_1.0_amd64/usr/share/applications/
+	dpkg-deb --build build/deb/internet-indicator_1.0_amd64
+	mv build/deb/internet-indicator_1.0_amd64.deb build/
+
+rpm: distributable
+	@echo "Building RPM..."
+	mkdir -p build/rpm/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	cp packaging/internet-indicator.spec build/rpm/SPECS/
+	rpmbuild -bb --define "_topdir $$(pwd)/build/rpm" --define "srcdir $$(pwd)" build/rpm/SPECS/internet-indicator.spec
+	find build/rpm/RPMS -name "*.rpm" -exec cp {} build/ \; || true
+
+apk:
+	@echo "Building APK via Docker..."
+	DOCKER_BUILDKIT=0 docker build --target builder -t internet-indicator-apk-builder -f packaging/Dockerfile .
+	mkdir -p build/apk
+	docker run --rm --name temp-apk-builder -v $$(pwd)/build/apk:/out internet-indicator-apk-builder sh -c 'cp /home/builder/packages/builder/x86_64/*.apk /out/'
+	cp build/apk/*.apk build/ || true
+
+docker:
+	@echo "Building minimal Docker image..."
+	DOCKER_BUILDKIT=0 docker build --target minimal -t internet-indicator:latest -f packaging/Dockerfile .
+
+packages:
+	mkdir -p build
+	$(MAKE) deb
+	$(MAKE) rpm
+	$(MAKE) apk
+	$(MAKE) docker
+
