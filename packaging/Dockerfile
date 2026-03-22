@@ -29,7 +29,14 @@ RUN echo 'pkgname=internet-indicator' > APKBUILD && \
     echo 'makedepends="build-base gtk+3.0-dev libayatana-appindicator-dev xxd"' >> APKBUILD && \
     echo 'source=""' >> APKBUILD && \
     echo 'build() { make distributable; }' >> APKBUILD && \
-    echo 'package() { install -Dm755 internet-indicator-standalone $pkgdir/usr/bin/internet-indicator; install -Dm644 internet-indicator.desktop $pkgdir/usr/share/applications/internet-indicator.desktop; }' >> APKBUILD
+    echo 'package() {' >> APKBUILD && \
+    echo '    mkdir -p $pkgdir/usr/bin' >> APKBUILD && \
+    echo '    mkdir -p $pkgdir/usr/share/applications' >> APKBUILD && \
+    echo '    mkdir -p $pkgdir/usr/lib/systemd/user' >> APKBUILD && \
+    echo '    cp internet-indicator-standalone $pkgdir/usr/bin/internet-indicator' >> APKBUILD && \
+    echo '    cp internet-indicator.desktop $pkgdir/usr/share/applications/' >> APKBUILD && \
+    echo '    sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" packaging/internet-indicator.service > $pkgdir/usr/lib/systemd/user/internet-indicator.service' >> APKBUILD && \
+    echo '}' >> APKBUILD
 
 # Generate APK
 RUN abuild -F checksum && abuild -F rootpkg

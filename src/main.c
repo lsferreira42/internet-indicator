@@ -10,6 +10,7 @@
 #include <libgen.h>
 #include <unistd.h>
 #include <linux/limits.h>
+#include <time.h>
 
 /* ------------------------------------------------------------------ */
 /*  Globals                                                            */
@@ -39,10 +40,33 @@ static void cleanup_standalone(void) {
 /* ------------------------------------------------------------------ */
 
 static volatile int ping_in_progress = 0;
+static int g_last_state = -1;
+
+static void log_state_change(bool ok) {
+    if (!g_config.log_enabled) return;
+    
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
+    
+    if (ok) {
+        printf("[%s] STATUS: Internet is UP (%s)\n", buf, g_config.address);
+    } else {
+        printf("[%s] STATUS: Internet is DOWN (%s)\n", buf, g_config.address);
+    }
+    fflush(stdout);
+}
 
 static gboolean on_ping_result(gpointer data) {
     bool ok = GPOINTER_TO_INT(data);
     tray_set_status(ok, g_config.address);
+    
+    if (g_last_state == -1 || g_last_state != (int)ok) {
+        log_state_change(ok);
+        g_last_state = (int)ok;
+    }
+    
     g_atomic_int_set(&ping_in_progress, 0);
     return G_SOURCE_REMOVE;
 }
@@ -97,13 +121,16 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
     if (response_id == GTK_RESPONSE_ACCEPT) {
         GtkWidget *entry_addr = g_object_get_data(G_OBJECT(dialog), "entry_addr");
         GtkWidget *entry_intv = g_object_get_data(G_OBJECT(dialog), "entry_intv");
+        GtkWidget *chk_log    = g_object_get_data(G_OBJECT(dialog), "chk_log");
         
         const char *new_addr = gtk_entry_get_text(GTK_ENTRY(entry_addr));
         int new_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(entry_intv));
+        bool new_log = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_log));
         
         strncpy(g_config.address, new_addr, sizeof(g_config.address) - 1);
         g_config.address[sizeof(g_config.address) - 1] = '\0';
         g_config.interval = new_interval;
+        g_config.log_enabled = new_log;
         
         config_save(&g_config);
     }
@@ -135,15 +162,20 @@ static void on_open_config(void)
     GtkWidget *entry_interval = gtk_spin_button_new_with_range(1, 3600, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(entry_interval), g_config.interval);
     
+    GtkWidget *chk_log = gtk_check_button_new_with_label("Enable Connection Logs");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_log), g_config.log_enabled);
+    
     gtk_grid_attach(GTK_GRID(grid), lbl_address, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_address, 1, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), lbl_interval, 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_interval, 1, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), chk_log, 1, 2, 1, 1);
     
     gtk_container_add(GTK_CONTAINER(content_area), grid);
     
     g_object_set_data(G_OBJECT(dialog), "entry_addr", entry_address);
     g_object_set_data(G_OBJECT(dialog), "entry_intv", entry_interval);
+    g_object_set_data(G_OBJECT(dialog), "chk_log", chk_log);
     
     g_signal_connect(dialog, "response", G_CALLBACK(on_dialog_response), NULL);
     

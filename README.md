@@ -7,6 +7,7 @@ A lightweight, minimal system tray indicator to monitor your internet connection
 - **Real-time monitoring**: Pings a user-defined host (default is `8.8.8.8`) securely using ICMP raw sockets (or UDP fallback).
 - **Asynchronous**: Ping happens in a separate thread, meaning the GUI will never freeze or hang.
 - **Configurable**: Right-click the icon to change the target address and ping interval (in seconds) on the fly.
+- **Connection Logging**: Toggable feature to record timestamped internet UP/DOWN events to standard output (or `journalctl`).
 - **Cross-compatible**: Compiles as a dynamic binary for major distributions, or fully standalone via Docker multi-stage builds.
 
 ## Installation
@@ -42,6 +43,18 @@ make distributable
 To ensure the indicator boots up automatically with your desktop environment:
 ```bash
 make autostart
+```
+
+### Systemd Service (Background Daemon)
+The application includes native integration as a graphical user service. If you install via packages or `make install`, the service file is placed automatically.
+
+Enable and start the service tied to your user session (no `sudo` required):
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now internet-indicator.service
+
+# View connection state logs (if log_enabled=true in settings)
+journalctl --user -u internet-indicator.service -f
 ```
 
 ## Permissions

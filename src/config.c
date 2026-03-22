@@ -35,8 +35,9 @@ static bool write_defaults(const char *path) {
   fprintf(fp,
           "[settings]\n"
           "address=%s\n"
-          "interval=%d\n",
-          DEFAULT_ADDRESS, DEFAULT_INTERVAL);
+          "interval=%d\n"
+          "log_enabled=%s\n",
+          DEFAULT_ADDRESS, DEFAULT_INTERVAL, DEFAULT_LOG_ENABLED ? "true" : "false");
   fclose(fp);
   return true;
 }
@@ -61,6 +62,7 @@ static bool parse_ini(Config *cfg, const char *path) {
   /* set defaults before parsing */
   strncpy(cfg->address, DEFAULT_ADDRESS, sizeof(cfg->address) - 1);
   cfg->interval = DEFAULT_INTERVAL;
+  cfg->log_enabled = DEFAULT_LOG_ENABLED;
 
   char line[512];
   while (fgets(line, sizeof(line), fp)) {
@@ -86,6 +88,11 @@ static bool parse_ini(Config *cfg, const char *path) {
       int v = atoi(value);
       if (v > 0)
         cfg->interval = v;
+    } else if (strcmp(key, "log_enabled") == 0) {
+      if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0)
+        cfg->log_enabled = true;
+      else
+        cfg->log_enabled = false;
     }
   }
 
@@ -149,8 +156,9 @@ bool config_save(const Config *cfg) {
   fprintf(fp,
           "[settings]\n"
           "address=%s\n"
-          "interval=%d\n",
-          cfg->address, cfg->interval);
+          "interval=%d\n"
+          "log_enabled=%s\n",
+          cfg->address, cfg->interval, cfg->log_enabled ? "true" : "false");
   fclose(fp);
   return true;
 }

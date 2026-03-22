@@ -14,9 +14,12 @@ System tray internet connectivity indicator.
 %install
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/share/applications
+mkdir -p %{buildroot}/usr/lib/systemd/user
 install -m 755 %{srcdir}/internet-indicator-standalone %{buildroot}/usr/bin/internet-indicator
 install -m 644 %{srcdir}/internet-indicator.desktop %{buildroot}/usr/share/applications/
+sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" %{srcdir}/packaging/internet-indicator.service > %{buildroot}/usr/lib/systemd/user/internet-indicator.service
 
 %files
 /usr/bin/internet-indicator
 /usr/share/applications/internet-indicator.desktop
+/usr/lib/systemd/user/internet-indicator.service

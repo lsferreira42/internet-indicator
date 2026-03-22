@@ -32,6 +32,9 @@ clean:
 
 install: $(TARGET)
 	install -Dm755 $(TARGET) $(DESTDIR)$(INSTALL_BIN)/$(TARGET)
+	install -Dm644 internet-indicator.desktop $(DESTDIR)$(PREFIX)/share/applications/internet-indicator.desktop
+	mkdir -p $(DESTDIR)$(PREFIX)/lib/systemd/user
+	sed "s|ExecStart=.*|ExecStart=$(INSTALL_BIN)/internet-indicator|" packaging/internet-indicator.service > $(DESTDIR)$(PREFIX)/lib/systemd/user/internet-indicator.service
 	install -Dm644 icons/net-good.png $(DESTDIR)$(INSTALL_DATA)/icons/net-good.png
 	install -Dm644 icons/net-bad.png  $(DESTDIR)$(INSTALL_DATA)/icons/net-bad.png
 	@echo "Setting CAP_NET_RAW on $(DESTDIR)$(INSTALL_BIN)/$(TARGET)..."
@@ -40,6 +43,8 @@ install: $(TARGET)
 
 uninstall:
 	rm -f  $(DESTDIR)$(INSTALL_BIN)/$(TARGET)
+	rm -f  $(DESTDIR)$(PREFIX)/share/applications/internet-indicator.desktop
+	rm -f  $(DESTDIR)$(PREFIX)/lib/systemd/user/internet-indicator.service
 	rm -rf $(DESTDIR)$(INSTALL_DATA)
 	rm -f  $(HOME)/.config/autostart/internet-indicator.desktop
 
@@ -59,9 +64,11 @@ deb: distributable
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/bin
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications
+	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user
 	sed "s/Version: .*/Version: $(VERSION)/" packaging/internet-indicator.control > build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN/control
 	cp internet-indicator-standalone build/deb/internet-indicator_$(VERSION)_amd64/usr/bin/internet-indicator
 	cp internet-indicator.desktop build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications/
+	sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" packaging/internet-indicator.service > build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user/internet-indicator.service
 	dpkg-deb --build build/deb/internet-indicator_$(VERSION)_amd64
 	mv build/deb/internet-indicator_$(VERSION)_amd64.deb build/
 
@@ -89,6 +96,26 @@ packages:
 	$(MAKE) rpm
 	$(MAKE) apk
 	$(MAKE) docker
+
+release:
+	@echo "Checking if working directory is clean..."
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: Working directory is not clean. Commit or stash your changes first."; \
+		exit 1; \
+	fi
+	@echo "Creating GitHub release for v$(VERSION)..."
+	git tag -a v$(VERSION) -m "Release v$(VERSION)"
+	git push origin v$(VERSION)
+	@assets=""; \
+	for f in internet-indicator-standalone build/*.apk build/*.deb build/*.rpm; do \
+		if [ -f "$$f" ]; then assets="$$assets $$f"; fi; \
+	done; \
+	if [ -n "$$assets" ]; then \
+		gh release create v$(VERSION) $$assets -t "v$(VERSION)" -n "Release v$(VERSION)"; \
+	else \
+		gh release create v$(VERSION) -t "v$(VERSION)" -n "Release v$(VERSION)"; \
+	fi
+	@echo "Release published successfully!"
 
 bump-version-bugfix:
 	@awk -F. '{print $$1"."$$2"."$$3+1}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION

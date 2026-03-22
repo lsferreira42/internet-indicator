@@ -9,10 +9,12 @@
 #define CONFIG_FILE         "config"
 #define DEFAULT_ADDRESS     "8.8.8.8"
 #define DEFAULT_INTERVAL    1
+#define DEFAULT_LOG_ENABLED false
 
 typedef struct {
     char address[256];
     int  interval;          /* seconds between pings */
+    bool log_enabled;       /* UP/DOWN logging toggle */
 
     /* internal */
     char          config_path[512];

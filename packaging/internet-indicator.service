@@ -1,0 +1,13 @@
+[Unit]
+Description=Internet Connection Indicator
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/internet-indicator
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
