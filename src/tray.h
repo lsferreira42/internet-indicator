@@ -7,6 +7,9 @@
  * directory containing net-good.png and net-bad.png. */
 bool tray_init(const char *icon_dir);
 
+/* Set the callback invoked when the user clicks 'Configurações' */
+void tray_set_config_callback(void (*cb)(void));
+
 /* Update the tray icon and tooltip.
  *   connected = true  → green icon
  *   connected = false → red icon

@@ -22,13 +22,34 @@ static char    g_icon_dir[PATH_MAX];
 #define PING_TIMEOUT 2  /* seconds */
 
 /* ------------------------------------------------------------------ */
-/*  Ping timer callback                                                */
+/*  Ping timer callback (async)                                        */
 /* ------------------------------------------------------------------ */
+
+static volatile int ping_in_progress = 0;
+
+static gboolean on_ping_result(gpointer data) {
+    bool ok = GPOINTER_TO_INT(data);
+    tray_set_status(ok, g_config.address);
+    g_atomic_int_set(&ping_in_progress, 0);
+    return G_SOURCE_REMOVE;
+}
+
+static gpointer ping_worker(gpointer data) {
+    char *addr = (char*)data;
+    bool ok = ping_host(addr, PING_TIMEOUT);
+    g_idle_add(on_ping_result, GINT_TO_POINTER((gint)ok));
+    g_free(addr);
+    return NULL;
+}
 
 static gboolean on_ping_timer(gpointer data G_GNUC_UNUSED)
 {
-    bool ok = ping_host(g_config.address, PING_TIMEOUT);
-    tray_set_status(ok, g_config.address);
+    if (g_atomic_int_get(&ping_in_progress)) {
+        return G_SOURCE_CONTINUE; /* skip tick if previous ping still running */
+    }
+    g_atomic_int_set(&ping_in_progress, 1);
+    char *addr = g_strdup(g_config.address);
+    g_thread_unref(g_thread_new("ping", ping_worker, addr));
     return G_SOURCE_CONTINUE;
 }
 
@@ -52,6 +73,68 @@ static void on_config_changed(gpointer data G_GNUC_UNUSED)
 
     /* do an immediate check with the new address */
     on_ping_timer(NULL);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Config UI callback (non-blocking GTK dialog)                       */
+/* ------------------------------------------------------------------ */
+
+static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer user_data G_GNUC_UNUSED)
+{
+    if (response_id == GTK_RESPONSE_ACCEPT) {
+        GtkWidget *entry_addr = g_object_get_data(G_OBJECT(dialog), "entry_addr");
+        GtkWidget *entry_intv = g_object_get_data(G_OBJECT(dialog), "entry_intv");
+        
+        const char *new_addr = gtk_entry_get_text(GTK_ENTRY(entry_addr));
+        int new_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(entry_intv));
+        
+        strncpy(g_config.address, new_addr, sizeof(g_config.address) - 1);
+        g_config.address[sizeof(g_config.address) - 1] = '\0';
+        g_config.interval = new_interval;
+        
+        config_save(&g_config);
+    }
+    gtk_widget_destroy(GTK_WIDGET(dialog));
+}
+
+static void on_open_config(void)
+{
+    GtkWidget *dialog = gtk_dialog_new_with_buttons("Configurações",
+                                                    NULL,
+                                                    GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                    "_Cancelar", GTK_RESPONSE_CANCEL,
+                                                    "_Salvar", GTK_RESPONSE_ACCEPT,
+                                                    NULL);
+    
+    GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 10);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 15);
+    
+    GtkWidget *lbl_address = gtk_label_new("Endereço (IP/Host):");
+    gtk_widget_set_halign(lbl_address, GTK_ALIGN_END);
+    GtkWidget *entry_address = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(entry_address), g_config.address);
+    
+    GtkWidget *lbl_interval = gtk_label_new("Intervalo (segundos):");
+    gtk_widget_set_halign(lbl_interval, GTK_ALIGN_END);
+    GtkWidget *entry_interval = gtk_spin_button_new_with_range(1, 3600, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(entry_interval), g_config.interval);
+    
+    gtk_grid_attach(GTK_GRID(grid), lbl_address, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), entry_address, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), lbl_interval, 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), entry_interval, 1, 1, 1, 1);
+    
+    gtk_container_add(GTK_CONTAINER(content_area), grid);
+    
+    g_object_set_data(G_OBJECT(dialog), "entry_addr", entry_address);
+    g_object_set_data(G_OBJECT(dialog), "entry_intv", entry_interval);
+    
+    g_signal_connect(dialog, "response", G_CALLBACK(on_dialog_response), NULL);
+    
+    gtk_widget_show_all(dialog);
 }
 
 /* ------------------------------------------------------------------ */
@@ -124,6 +207,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "internet-indicator: tray initialization failed\n");
         return 1;
     }
+    tray_set_config_callback(on_open_config);
 
     /* watch config for changes */
     config_watch(&g_config, G_CALLBACK(on_config_changed), NULL);

@@ -8,8 +8,16 @@
 static AppIndicator *indicator       = NULL;
 static GtkWidget    *menu            = NULL;
 static GtkWidget    *status_item     = NULL;
+static void (*on_config_cb)(void)    = NULL;
 
 /* ------------------------------------------------------------------ */
+
+static void on_config(GtkMenuItem *item G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+    if (on_config_cb) {
+        on_config_cb();
+    }
+}
 
 static void on_quit(GtkMenuItem *item G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
@@ -42,6 +50,10 @@ bool tray_init(const char *icon_dir)
     GtkWidget *sep = gtk_separator_menu_item_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), sep);
 
+    GtkWidget *config_item = gtk_menu_item_new_with_label("Configurações...");
+    g_signal_connect(config_item, "activate", G_CALLBACK(on_config), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), config_item);
+
     GtkWidget *quit_item = gtk_menu_item_new_with_label("Quit");
     g_signal_connect(quit_item, "activate", G_CALLBACK(on_quit), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
@@ -70,6 +82,11 @@ void tray_set_status(bool connected, const char *target)
         snprintf(label, sizeof(label), "✗ Disconnected — %s", target);
 
     gtk_menu_item_set_label(GTK_MENU_ITEM(status_item), label);
+}
+
+void tray_set_config_callback(void (*cb)(void))
+{
+    on_config_cb = cb;
 }
 
 void tray_destroy(void)

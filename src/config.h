@@ -30,6 +30,9 @@ void config_watch(Config *cfg, GCallback callback, gpointer user_data);
 /* Re-read the config file into cfg. */
 bool config_reload(Config *cfg);
 
+/* Save the current cfg values to the config file (triggers monitor). */
+bool config_save(const Config *cfg);
+
 /* Clean up. */
 void config_destroy(Config *cfg);
 
