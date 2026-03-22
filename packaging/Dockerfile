@@ -16,9 +16,10 @@ WORKDIR /home/builder/source
 # Build standalone binary
 RUN make distributable
 
+ARG VERSION=0.0.1
 # Create APKBUILD
 RUN echo 'pkgname=internet-indicator' > APKBUILD && \
-    echo 'pkgver=1.0' >> APKBUILD && \
+    echo 'pkgver='${VERSION} >> APKBUILD && \
     echo 'pkgrel=0' >> APKBUILD && \
     echo 'pkgdesc="Internet indicator"' >> APKBUILD && \
     echo 'url="https://github.com/lsferreira42/internet-indicator"' >> APKBUILD && \

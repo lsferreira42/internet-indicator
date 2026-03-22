@@ -112,11 +112,11 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
 
 static void on_open_config(void)
 {
-    GtkWidget *dialog = gtk_dialog_new_with_buttons("Configurações",
+    GtkWidget *dialog = gtk_dialog_new_with_buttons("Settings",
                                                     NULL,
                                                     GTK_DIALOG_DESTROY_WITH_PARENT,
-                                                    "_Cancelar", GTK_RESPONSE_CANCEL,
-                                                    "_Salvar", GTK_RESPONSE_ACCEPT,
+                                                    "_Cancel", GTK_RESPONSE_CANCEL,
+                                                    "_Save", GTK_RESPONSE_ACCEPT,
                                                     NULL);
     
     GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
@@ -125,12 +125,12 @@ static void on_open_config(void)
     gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
     gtk_container_set_border_width(GTK_CONTAINER(grid), 15);
     
-    GtkWidget *lbl_address = gtk_label_new("Endereço (IP/Host):");
+    GtkWidget *lbl_address = gtk_label_new("Address (IP/Host):");
     gtk_widget_set_halign(lbl_address, GTK_ALIGN_END);
     GtkWidget *entry_address = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(entry_address), g_config.address);
     
-    GtkWidget *lbl_interval = gtk_label_new("Intervalo (segundos):");
+    GtkWidget *lbl_interval = gtk_label_new("Interval (seconds):");
     gtk_widget_set_halign(lbl_interval, GTK_ALIGN_END);
     GtkWidget *entry_interval = gtk_spin_button_new_with_range(1, 3600, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(entry_interval), g_config.interval);

@@ -1,3 +1,4 @@
+VERSION := $(shell cat VERSION)
 APPINDICATOR_PKG ?= $(shell pkg-config --exists ayatana-appindicator3-0.1 && echo ayatana-appindicator3-0.1 || echo appindicator3-0.1)
 
 CC      = gcc
@@ -55,32 +56,32 @@ distributable:
 
 deb: distributable
 	@echo "Building DEB..."
-	mkdir -p build/deb/internet-indicator_1.0_amd64/DEBIAN
-	mkdir -p build/deb/internet-indicator_1.0_amd64/usr/bin
-	mkdir -p build/deb/internet-indicator_1.0_amd64/usr/share/applications
-	cp packaging/internet-indicator.control build/deb/internet-indicator_1.0_amd64/DEBIAN/control
-	cp internet-indicator-standalone build/deb/internet-indicator_1.0_amd64/usr/bin/internet-indicator
-	cp internet-indicator.desktop build/deb/internet-indicator_1.0_amd64/usr/share/applications/
-	dpkg-deb --build build/deb/internet-indicator_1.0_amd64
-	mv build/deb/internet-indicator_1.0_amd64.deb build/
+	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN
+	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/bin
+	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications
+	sed "s/Version: .*/Version: $(VERSION)/" packaging/internet-indicator.control > build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN/control
+	cp internet-indicator-standalone build/deb/internet-indicator_$(VERSION)_amd64/usr/bin/internet-indicator
+	cp internet-indicator.desktop build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications/
+	dpkg-deb --build build/deb/internet-indicator_$(VERSION)_amd64
+	mv build/deb/internet-indicator_$(VERSION)_amd64.deb build/
 
 rpm: distributable
 	@echo "Building RPM..."
 	mkdir -p build/rpm/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-	cp packaging/internet-indicator.spec build/rpm/SPECS/
+	sed "s/Version:\s*.*/Version:        $(VERSION)/" packaging/internet-indicator.spec > build/rpm/SPECS/internet-indicator.spec
 	rpmbuild -bb --define "_topdir $$(pwd)/build/rpm" --define "srcdir $$(pwd)" build/rpm/SPECS/internet-indicator.spec
 	find build/rpm/RPMS -name "*.rpm" -exec cp {} build/ \; || true
 
 apk:
 	@echo "Building APK via Docker..."
-	DOCKER_BUILDKIT=0 docker build --target builder -t internet-indicator-apk-builder -f packaging/Dockerfile .
+	DOCKER_BUILDKIT=0 docker build --build-arg VERSION=$(VERSION) --target builder -t internet-indicator-apk-builder -f packaging/Dockerfile .
 	mkdir -p build/apk
 	docker run --rm --name temp-apk-builder -v $$(pwd)/build/apk:/out internet-indicator-apk-builder sh -c 'cp /home/builder/packages/builder/x86_64/*.apk /out/'
 	cp build/apk/*.apk build/ || true
 
 docker:
 	@echo "Building minimal Docker image..."
-	DOCKER_BUILDKIT=0 docker build --target minimal -t internet-indicator:latest -f packaging/Dockerfile .
+	DOCKER_BUILDKIT=0 docker build --build-arg VERSION=$(VERSION) --target minimal -t internet-indicator:latest -f packaging/Dockerfile .
 
 packages:
 	mkdir -p build
@@ -88,4 +89,16 @@ packages:
 	$(MAKE) rpm
 	$(MAKE) apk
 	$(MAKE) docker
+
+bump-version-bugfix:
+	@awk -F. '{print $$1"."$$2"."$$3+1}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+	@echo "Bumped version to $$(cat VERSION)"
+
+bump-version-minor:
+	@awk -F. '{print $$1"."$$2+1".0"}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+	@echo "Bumped version to $$(cat VERSION)"
+
+bump-version-major:
+	@awk -F. '{print $$1+1".0.0"}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+	@echo "Bumped version to $$(cat VERSION)"
 

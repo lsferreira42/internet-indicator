@@ -54,7 +54,7 @@ bool tray_init(const char *icon_dir)
     GtkWidget *sep = gtk_separator_menu_item_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), sep);
 
-    GtkWidget *config_item = gtk_menu_item_new_with_label("Configurações...");
+    GtkWidget *config_item = gtk_menu_item_new_with_label("Settings...");
     g_signal_connect(config_item, "activate", G_CALLBACK(on_config), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), config_item);
 
