@@ -92,30 +92,38 @@ docker:
 
 packages:
 	mkdir -p build
-	$(MAKE) deb
-	$(MAKE) rpm
-	$(MAKE) apk
-	$(MAKE) docker
+	-$(MAKE) deb
+	-$(MAKE) rpm
+	-$(MAKE) apk
+	-$(MAKE) docker
+	@echo "Package build phase completed (see above for any specific failures)."
 
-release:
+release: packages distributable
 	@echo "Checking if working directory is clean..."
 	@if [ -n "$$(git status --porcelain)" ]; then \
 		echo "Error: Working directory is not clean. Commit or stash your changes first."; \
 		exit 1; \
 	fi
 	@echo "Creating GitHub release for v$(VERSION)..."
-	git tag -a v$(VERSION) -m "Release v$(VERSION)"
-	git push origin v$(VERSION)
+	@if git rev-parse v$(VERSION) >/dev/null 2>&1; then \
+		echo "Tag v$(VERSION) already exists. Skipping tag creation."; \
+	else \
+		git tag -a v$(VERSION) -m "Release v$(VERSION)"; \
+		git push origin v$(VERSION); \
+	fi
 	@assets=""; \
 	for f in internet-indicator-standalone build/*.apk build/*.deb build/*.rpm; do \
 		if [ -f "$$f" ]; then assets="$$assets $$f"; fi; \
 	done; \
 	if [ -n "$$assets" ]; then \
-		gh release create v$(VERSION) $$assets -t "v$(VERSION)" -n "Release v$(VERSION)"; \
+		echo "Uploading assets: $$assets"; \
+		gh release create v$(VERSION) $$assets --title "v$(VERSION)" --notes "Release v$(VERSION)" || \
+		gh release upload v$(VERSION) $$assets --clobber; \
 	else \
-		gh release create v$(VERSION) -t "v$(VERSION)" -n "Release v$(VERSION)"; \
+		echo "No assets found in build/ or root. Creating empty release."; \
+		gh release create v$(VERSION) --title "v$(VERSION)" --notes "Release v$(VERSION)" || true; \
 	fi
-	@echo "Release published successfully!"
+	@echo "Release process finished!"
 
 bump-version-bugfix:
 	@awk -F. '{print $$1"."$$2"."$$3+1}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
