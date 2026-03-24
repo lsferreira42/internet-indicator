@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <linux/limits.h>
 #include <time.h>
+#include <systemd/sd-bus.h>
+#include <stdbool.h>
 
 /* ------------------------------------------------------------------ */
 /*  Globals                                                            */
@@ -19,6 +21,10 @@
 static Config  g_config;
 static guint   g_timer_id    = 0;
 static char    g_icon_dir[PATH_MAX];
+
+static sd_bus      *g_bus  = NULL;
+static sd_bus_slot *g_slot = NULL;
+static bool         g_is_sleeping = false;
 
 #ifdef STANDALONE
 #include "icons_embedded.h"
@@ -81,6 +87,9 @@ static gpointer ping_worker(gpointer data) {
 
 static gboolean on_ping_timer(gpointer data G_GNUC_UNUSED)
 {
+    if (g_is_sleeping) {
+        return G_SOURCE_CONTINUE;
+    }
     if (g_atomic_int_get(&ping_in_progress)) {
         return G_SOURCE_CONTINUE; /* skip tick if previous ping still running */
     }
@@ -88,6 +97,90 @@ static gboolean on_ping_timer(gpointer data G_GNUC_UNUSED)
     char *addr = g_strdup(g_config.address);
     g_thread_unref(g_thread_new("ping", ping_worker, addr));
     return G_SOURCE_CONTINUE;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sleep / Suspension Detection                                       */
+/* ------------------------------------------------------------------ */
+
+static int on_prepare_for_sleep(sd_bus_message *m, void *userdata G_GNUC_UNUSED, sd_bus_error *ret_error G_GNUC_UNUSED) {
+    int going_down;
+    int r = sd_bus_message_read(m, "b", &going_down);
+    if (r < 0) return r;
+
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
+
+    if (going_down) {
+        g_is_sleeping = true;
+        if (g_config.log_enabled) {
+            printf("[%s] STATUS: System entering sleep mode\n", buf);
+            fflush(stdout);
+        }
+    } else {
+        g_is_sleeping = false;
+        if (g_config.log_enabled) {
+            printf("[%s] STATUS: System awake\n", buf);
+            fflush(stdout);
+        }
+    }
+
+    return 0;
+}
+
+static gboolean sdbus_dispatch(GIOChannel *source G_GNUC_UNUSED, GIOCondition condition G_GNUC_UNUSED, gpointer data) {
+    sd_bus *bus = (sd_bus *)data;
+    int r;
+    do {
+        r = sd_bus_process(bus, NULL);
+    } while (r > 0);
+    return TRUE;
+}
+
+static void cleanup_sdbus(void) {
+    if (g_slot) {
+        sd_bus_slot_unref(g_slot);
+        g_slot = NULL;
+    }
+    if (g_bus) {
+        sd_bus_flush_close_unref(g_bus);
+        g_bus = NULL;
+    }
+}
+
+static void init_sdbus(void) {
+    cleanup_sdbus();
+    if (!g_config.sleep_detection_enabled) return;
+
+    int r = sd_bus_default_system(&g_bus);
+    if (r < 0) {
+        fprintf(stderr, "internet-indicator: failed to connect to system bus: %s\n", strerror(-r));
+        return;
+    }
+
+    r = sd_bus_match_signal(
+        g_bus, &g_slot,
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+        "PrepareForSleep",
+        on_prepare_for_sleep, NULL
+    );
+
+    if (r < 0) {
+        fprintf(stderr, "internet-indicator: failed to match signal: %s\n", strerror(-r));
+        cleanup_sdbus();
+        return;
+    }
+
+    int fd = sd_bus_get_fd(g_bus);
+    if (fd >= 0) {
+        GIOChannel *channel = g_io_channel_unix_new(fd);
+        g_io_add_watch(channel, G_IO_IN | G_IO_HUP | G_IO_ERR, sdbus_dispatch, g_bus);
+        g_io_channel_unref(channel);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -122,15 +215,24 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         GtkWidget *entry_addr = g_object_get_data(G_OBJECT(dialog), "entry_addr");
         GtkWidget *entry_intv = g_object_get_data(G_OBJECT(dialog), "entry_intv");
         GtkWidget *chk_log    = g_object_get_data(G_OBJECT(dialog), "chk_log");
+        GtkWidget *chk_sleep  = g_object_get_data(G_OBJECT(dialog), "chk_sleep");
         
         const char *new_addr = gtk_entry_get_text(GTK_ENTRY(entry_addr));
         int new_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(entry_intv));
         bool new_log = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_log));
+        bool new_sleep = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_sleep));
         
         strncpy(g_config.address, new_addr, sizeof(g_config.address) - 1);
         g_config.address[sizeof(g_config.address) - 1] = '\0';
         g_config.interval = new_interval;
         g_config.log_enabled = new_log;
+        
+        bool sleep_changed = (g_config.sleep_detection_enabled != new_sleep);
+        g_config.sleep_detection_enabled = new_sleep;
+        
+        if (sleep_changed) {
+            init_sdbus();
+        }
         
         config_save(&g_config);
     }
@@ -165,17 +267,22 @@ static void on_open_config(void)
     GtkWidget *chk_log = gtk_check_button_new_with_label("Enable Connection Logs");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_log), g_config.log_enabled);
     
+    GtkWidget *chk_sleep = gtk_check_button_new_with_label("Detect Sleep/Suspension (D-Bus)");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_sleep), g_config.sleep_detection_enabled);
+    
     gtk_grid_attach(GTK_GRID(grid), lbl_address, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_address, 1, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), lbl_interval, 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_interval, 1, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), chk_log, 1, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), chk_sleep, 1, 3, 1, 1);
     
     gtk_container_add(GTK_CONTAINER(content_area), grid);
     
     g_object_set_data(G_OBJECT(dialog), "entry_addr", entry_address);
     g_object_set_data(G_OBJECT(dialog), "entry_intv", entry_interval);
     g_object_set_data(G_OBJECT(dialog), "chk_log", chk_log);
+    g_object_set_data(G_OBJECT(dialog), "chk_sleep", chk_sleep);
     
     g_signal_connect(dialog, "response", G_CALLBACK(on_dialog_response), NULL);
     
@@ -281,6 +388,9 @@ int main(int argc, char *argv[])
         return 1;
     }
     tray_set_config_callback(on_open_config);
+    
+    /* init sdbus */
+    init_sdbus();
 
     /* watch config for changes */
     config_watch(&g_config, G_CALLBACK(on_config_changed), NULL);
@@ -299,6 +409,7 @@ int main(int argc, char *argv[])
     if (g_timer_id) g_source_remove(g_timer_id);
     tray_destroy();
     config_destroy(&g_config);
+    cleanup_sdbus();
 
     printf("internet-indicator: exiting\n");
     return 0;

@@ -10,11 +10,13 @@
 #define DEFAULT_ADDRESS     "8.8.8.8"
 #define DEFAULT_INTERVAL    1
 #define DEFAULT_LOG_ENABLED false
+#define DEFAULT_SLEEP_DETECTION_ENABLED true
 
 typedef struct {
     char address[256];
     int  interval;          /* seconds between pings */
     bool log_enabled;       /* UP/DOWN logging toggle */
+    bool sleep_detection_enabled; /* pause pings during sleep */
 
     /* internal */
     char          config_path[512];

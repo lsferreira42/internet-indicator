@@ -3,11 +3,11 @@ APPINDICATOR_PKG ?= $(shell pkg-config --exists ayatana-appindicator3-0.1 && ech
 
 CC      = gcc
 CFLAGS  ?= -Wall -Wextra -O2
-CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 $(APPINDICATOR_PKG))
+CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 libsystemd $(APPINDICATOR_PKG))
 ifeq ($(APPINDICATOR_PKG),ayatana-appindicator3-0.1)
   CFLAGS += -DHAVE_AYATANA
 endif
-LDFLAGS += $(shell pkg-config --libs gtk+-3.0 $(APPINDICATOR_PKG))
+LDFLAGS += $(shell pkg-config --libs gtk+-3.0 libsystemd $(APPINDICATOR_PKG))
 
 SRCDIR  = src
 SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/tray.c
