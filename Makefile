@@ -3,11 +3,17 @@ APPINDICATOR_PKG ?= $(shell pkg-config --exists ayatana-appindicator3-0.1 && ech
 
 CC      = gcc
 CFLAGS  ?= -Wall -Wextra -O2
-CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 libsystemd $(APPINDICATOR_PKG))
+CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 $(APPINDICATOR_PKG) 2>/dev/null)
+LDFLAGS += $(shell pkg-config --libs gtk+-3.0 $(APPINDICATOR_PKG) 2>/dev/null)
+
 ifeq ($(APPINDICATOR_PKG),ayatana-appindicator3-0.1)
   CFLAGS += -DHAVE_AYATANA
 endif
-LDFLAGS += $(shell pkg-config --libs gtk+-3.0 libsystemd $(APPINDICATOR_PKG))
+
+ifeq ($(shell pkg-config --exists libsystemd && echo yes),yes)
+  CFLAGS  += $(shell pkg-config --cflags libsystemd) -DHAVE_LIBSYSTEMD
+  LDFLAGS += $(shell pkg-config --libs libsystemd)
+endif
 
 SRCDIR  = src
 SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/tray.c

@@ -11,9 +11,11 @@
 #include <unistd.h>
 #include <linux/limits.h>
 #include <time.h>
+#ifdef HAVE_LIBSYSTEMD
 #include <systemd/sd-bus.h>
-#include <stdbool.h>
 #include <stdint.h>
+#endif
+#include <stdbool.h>
 
 /* ------------------------------------------------------------------ */
 /*  Globals                                                            */
@@ -23,11 +25,13 @@ static Config  g_config;
 static guint   g_timer_id    = 0;
 static char    g_icon_dir[PATH_MAX];
 
+#ifdef HAVE_LIBSYSTEMD
 static sd_bus      *g_bus  = NULL;
 static sd_bus_slot *g_slot = NULL;
 static bool         g_is_sleeping = false;
 static bool         g_is_locked   = false;
 static char         g_session_path[512] = "";
+#endif
 
 #ifdef STANDALONE
 #include "icons_embedded.h"
@@ -90,9 +94,11 @@ static gpointer ping_worker(gpointer data) {
 
 static gboolean on_ping_timer(gpointer data G_GNUC_UNUSED)
 {
+#ifdef HAVE_LIBSYSTEMD
     if (g_is_sleeping || g_is_locked) {
         return G_SOURCE_CONTINUE;
     }
+#endif
     if (g_atomic_int_get(&ping_in_progress)) {
         return G_SOURCE_CONTINUE; /* skip tick if previous ping still running */
     }
@@ -102,6 +108,7 @@ static gboolean on_ping_timer(gpointer data G_GNUC_UNUSED)
     return G_SOURCE_CONTINUE;
 }
 
+#ifdef HAVE_LIBSYSTEMD
 /* ------------------------------------------------------------------ */
 /*  Sleep / Suspension Detection                                       */
 /* ------------------------------------------------------------------ */
@@ -341,6 +348,7 @@ static void init_sdbus(void) {
         g_io_channel_unref(channel);
     }
 }
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Config change callback                                             */
@@ -388,15 +396,19 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         g_config.interval = new_interval;
         g_config.log_enabled = new_log;
         
+#ifdef HAVE_LIBSYSTEMD
         bool sdbus_reinit = (g_config.sleep_detection_enabled != new_sleep) ||
                             (g_config.lock_detection_enabled != new_lock);
+#endif
         
         g_config.sleep_detection_enabled = new_sleep;
         g_config.lock_detection_enabled = new_lock;
         
+#ifdef HAVE_LIBSYSTEMD
         if (sdbus_reinit) {
             init_sdbus();
         }
+#endif
         
         config_save(&g_config);
     }
@@ -436,6 +448,13 @@ static void on_open_config(void)
     
     GtkWidget *chk_lock = gtk_check_button_new_with_label("Detect Screen Lock (D-Bus)");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_lock), g_config.lock_detection_enabled);
+
+#ifndef HAVE_LIBSYSTEMD
+    gtk_widget_set_sensitive(chk_sleep, FALSE);
+    gtk_widget_set_sensitive(chk_lock, FALSE);
+    gtk_widget_set_tooltip_text(chk_sleep, "Feature not available on this system (libsystemd missing)");
+    gtk_widget_set_tooltip_text(chk_lock, "Feature not available on this system (libsystemd missing)");
+#endif
     
     gtk_grid_attach(GTK_GRID(grid), lbl_address, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_address, 1, 0, 1, 1);
@@ -558,8 +577,10 @@ int main(int argc, char *argv[])
     }
     tray_set_config_callback(on_open_config);
     
+#ifdef HAVE_LIBSYSTEMD
     /* init sdbus */
     init_sdbus();
+#endif
 
     /* watch config for changes */
     config_watch(&g_config, G_CALLBACK(on_config_changed), NULL);
@@ -578,7 +599,9 @@ int main(int argc, char *argv[])
     if (g_timer_id) g_source_remove(g_timer_id);
     tray_destroy();
     config_destroy(&g_config);
+#ifdef HAVE_LIBSYSTEMD
     cleanup_sdbus();
+#endif
 
     printf("internet-indicator: exiting\n");
     return 0;
