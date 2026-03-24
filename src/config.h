@@ -11,12 +11,14 @@
 #define DEFAULT_INTERVAL    1
 #define DEFAULT_LOG_ENABLED false
 #define DEFAULT_SLEEP_DETECTION_ENABLED true
+#define DEFAULT_LOCK_DETECTION_ENABLED true
 
 typedef struct {
     char address[256];
     int  interval;          /* seconds between pings */
     bool log_enabled;       /* UP/DOWN logging toggle */
     bool sleep_detection_enabled; /* pause pings during sleep */
+    bool lock_detection_enabled;  /* pause pings during screen lock */
 
     /* internal */
     char          config_path[512];

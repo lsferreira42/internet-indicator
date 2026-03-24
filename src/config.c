@@ -37,9 +37,11 @@ static bool write_defaults(const char *path) {
           "address=%s\n"
           "interval=%d\n"
           "log_enabled=%s\n"
-          "sleep_detection_enabled=%s\n",
+          "sleep_detection_enabled=%s\n"
+          "lock_detection_enabled=%s\n",
           DEFAULT_ADDRESS, DEFAULT_INTERVAL, DEFAULT_LOG_ENABLED ? "true" : "false",
-          DEFAULT_SLEEP_DETECTION_ENABLED ? "true" : "false");
+          DEFAULT_SLEEP_DETECTION_ENABLED ? "true" : "false",
+          DEFAULT_LOCK_DETECTION_ENABLED ? "true" : "false");
   fclose(fp);
   return true;
 }
@@ -66,6 +68,7 @@ static bool parse_ini(Config *cfg, const char *path) {
   cfg->interval = DEFAULT_INTERVAL;
   cfg->log_enabled = DEFAULT_LOG_ENABLED;
   cfg->sleep_detection_enabled = DEFAULT_SLEEP_DETECTION_ENABLED;
+  cfg->lock_detection_enabled = DEFAULT_LOCK_DETECTION_ENABLED;
 
   char line[512];
   while (fgets(line, sizeof(line), fp)) {
@@ -101,6 +104,11 @@ static bool parse_ini(Config *cfg, const char *path) {
         cfg->sleep_detection_enabled = true;
       else
         cfg->sleep_detection_enabled = false;
+    } else if (strcmp(key, "lock_detection_enabled") == 0) {
+      if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0)
+        cfg->lock_detection_enabled = true;
+      else
+        cfg->lock_detection_enabled = false;
     }
   }
 
@@ -166,9 +174,11 @@ bool config_save(const Config *cfg) {
           "address=%s\n"
           "interval=%d\n"
           "log_enabled=%s\n"
-          "sleep_detection_enabled=%s\n",
+          "sleep_detection_enabled=%s\n"
+          "lock_detection_enabled=%s\n",
           cfg->address, cfg->interval, cfg->log_enabled ? "true" : "false",
-          cfg->sleep_detection_enabled ? "true" : "false");
+          cfg->sleep_detection_enabled ? "true" : "false",
+          cfg->lock_detection_enabled ? "true" : "false");
   fclose(fp);
   return true;
 }

@@ -13,6 +13,7 @@
 #include <time.h>
 #include <systemd/sd-bus.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /* ------------------------------------------------------------------ */
 /*  Globals                                                            */
@@ -25,6 +26,8 @@ static char    g_icon_dir[PATH_MAX];
 static sd_bus      *g_bus  = NULL;
 static sd_bus_slot *g_slot = NULL;
 static bool         g_is_sleeping = false;
+static bool         g_is_locked   = false;
+static char         g_session_path[512] = "";
 
 #ifdef STANDALONE
 #include "icons_embedded.h"
@@ -87,7 +90,7 @@ static gpointer ping_worker(gpointer data) {
 
 static gboolean on_ping_timer(gpointer data G_GNUC_UNUSED)
 {
-    if (g_is_sleeping) {
+    if (g_is_sleeping || g_is_locked) {
         return G_SOURCE_CONTINUE;
     }
     if (g_atomic_int_get(&ping_in_progress)) {
@@ -130,6 +133,65 @@ static int on_prepare_for_sleep(sd_bus_message *m, void *userdata G_GNUC_UNUSED,
     return 0;
 }
 
+static int on_session_lock(sd_bus_message *m, void *userdata G_GNUC_UNUSED, sd_bus_error *ret_error G_GNUC_UNUSED) {
+    const char *member = sd_bus_message_get_member(m);
+
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
+
+    if (strcmp(member, "Lock") == 0) {
+        if (!g_is_locked) {
+            g_is_locked = true;
+            if (g_config.log_enabled) {
+                printf("[%s] STATUS: Screen locked\n", buf);
+                fflush(stdout);
+            }
+        }
+    } else if (strcmp(member, "Unlock") == 0) {
+        if (g_is_locked) {
+            g_is_locked = false;
+            if (g_config.log_enabled) {
+                printf("[%s] STATUS: Screen unlocked\n", buf);
+                fflush(stdout);
+            }
+        }
+    } else if (strcmp(member, "PropertiesChanged") == 0) {
+        /* Check for LockedHint property change */
+        const char *interface;
+        int r = sd_bus_message_read(m, "s", &interface);
+        if (r >= 0 && strcmp(interface, "org.freedesktop.login1.Session") == 0) {
+            r = sd_bus_message_enter_container(m, 'a', "{sv}");
+            if (r >= 0) {
+                const char *key;
+                while (sd_bus_message_enter_container(m, 'e', "sv") > 0) {
+                    sd_bus_message_read(m, "s", &key);
+                    if (strcmp(key, "LockedHint") == 0) {
+                        int locked;
+                        sd_bus_message_enter_container(m, 'v', "b");
+                        sd_bus_message_read(m, "b", &locked);
+                        sd_bus_message_exit_container(m);
+                        
+                        if (g_is_locked != (bool)locked) {
+                            g_is_locked = (bool)locked;
+                            if (g_config.log_enabled) {
+                                printf("[%s] STATUS: Screen %s\n", buf, locked ? "locked" : "unlocked");
+                                fflush(stdout);
+                            }
+                        }
+                    } else {
+                        sd_bus_message_skip(m, "v");
+                    }
+                    sd_bus_message_exit_container(m);
+                }
+                sd_bus_message_exit_container(m);
+            }
+        }
+    }
+    return 0;
+}
+
 static gboolean sdbus_dispatch(GIOChannel *source G_GNUC_UNUSED, GIOCondition condition G_GNUC_UNUSED, gpointer data) {
     sd_bus *bus = (sd_bus *)data;
     int r;
@@ -148,11 +210,106 @@ static void cleanup_sdbus(void) {
         sd_bus_flush_close_unref(g_bus);
         g_bus = NULL;
     }
+    g_session_path[0] = '\0';
+}
+
+static void init_session_lock_detection(void) {
+    if (!g_config.lock_detection_enabled) return;
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    const char *session_path = NULL;
+
+    /* Discover session path by PID */
+    int r = sd_bus_call_method(
+        g_bus, "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+        "GetSessionByPID",
+        &error, &reply,
+        "u", (uint32_t)getpid()
+    );
+
+    if (r >= 0) {
+        r = sd_bus_message_read(reply, "o", &session_path);
+        if (r >= 0) {
+            strncpy(g_session_path, session_path, sizeof(g_session_path) - 1);
+        }
+    } else {
+        /* Fallback: try to find by session ID from environment */
+        const char *sid = getenv("XDG_SESSION_ID");
+        if (sid) {
+            sd_bus_error_free(&error);
+            r = sd_bus_call_method(
+                g_bus, "org.freedesktop.login1",
+                "/org/freedesktop/login1",
+                "org.freedesktop.login1.Manager",
+                "GetSession",
+                &error, &reply,
+                "s", sid
+            );
+            if (r >= 0) {
+                r = sd_bus_message_read(reply, "o", &session_path);
+                if (r >= 0) {
+                    strncpy(g_session_path, session_path, sizeof(g_session_path) - 1);
+                }
+            } else {
+                fprintf(stderr, "internet-indicator: GetSessionByPID and GetSession failed: %s\n", error.message);
+            }
+        } else {
+            fprintf(stderr, "internet-indicator: GetSessionByPID failed: %s (and XDG_SESSION_ID not set)\n", error.message);
+        }
+        sd_bus_error_free(&error);
+    }
+
+    if (g_session_path[0]) {
+        /* Match for Lock */
+        r = sd_bus_match_signal(
+            g_bus, NULL,
+            "org.freedesktop.login1",
+            g_session_path,
+            "org.freedesktop.login1.Session",
+            "Lock",
+            on_session_lock, NULL
+        );
+        if (r < 0) printf("internet-indicator: failed to match Lock: %s\n", strerror(-r));
+
+        /* Match for Unlock */
+        r = sd_bus_match_signal(
+            g_bus, NULL,
+            "org.freedesktop.login1",
+            g_session_path,
+            "org.freedesktop.login1.Session",
+            "Unlock",
+            on_session_lock, NULL
+        );
+        if (r < 0) printf("internet-indicator: failed to match Unlock: %s\n", strerror(-r));
+
+        /* Match for PropertiesChanged (to catch LockedHint) */
+        r = sd_bus_match_signal(
+            g_bus, NULL,
+            "org.freedesktop.login1",
+            g_session_path,
+            "org.freedesktop.DBus.Properties",
+            "PropertiesChanged",
+            on_session_lock, NULL
+        );
+        if (r < 0) printf("internet-indicator: failed to match PropertiesChanged: %s\n", strerror(-r));
+
+        /* Initial check for LockedHint */
+        int locked = 0;
+        r = sd_bus_get_property_trivial(g_bus, "org.freedesktop.login1", g_session_path, "org.freedesktop.login1.Session", "LockedHint", NULL, 'b', &locked);
+        if (r >= 0) {
+            g_is_locked = (bool)locked;
+        }
+    }
+
+    if (reply) sd_bus_message_unref(reply);
 }
 
 static void init_sdbus(void) {
     cleanup_sdbus();
-    if (!g_config.sleep_detection_enabled) return;
+    if (!g_config.sleep_detection_enabled && !g_config.lock_detection_enabled) return;
 
     int r = sd_bus_default_system(&g_bus);
     if (r < 0) {
@@ -160,20 +317,22 @@ static void init_sdbus(void) {
         return;
     }
 
-    r = sd_bus_match_signal(
-        g_bus, &g_slot,
-        "org.freedesktop.login1",
-        "/org/freedesktop/login1",
-        "org.freedesktop.login1.Manager",
-        "PrepareForSleep",
-        on_prepare_for_sleep, NULL
-    );
+    if (g_config.sleep_detection_enabled) {
+        r = sd_bus_match_signal(
+            g_bus, &g_slot,
+            "org.freedesktop.login1",
+            "/org/freedesktop/login1",
+            "org.freedesktop.login1.Manager",
+            "PrepareForSleep",
+            on_prepare_for_sleep, NULL
+        );
 
-    if (r < 0) {
-        fprintf(stderr, "internet-indicator: failed to match signal: %s\n", strerror(-r));
-        cleanup_sdbus();
-        return;
+        if (r < 0) {
+            fprintf(stderr, "internet-indicator: failed to match signal: %s\n", strerror(-r));
+        }
     }
+
+    init_session_lock_detection();
 
     int fd = sd_bus_get_fd(g_bus);
     if (fd >= 0) {
@@ -216,21 +375,26 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         GtkWidget *entry_intv = g_object_get_data(G_OBJECT(dialog), "entry_intv");
         GtkWidget *chk_log    = g_object_get_data(G_OBJECT(dialog), "chk_log");
         GtkWidget *chk_sleep  = g_object_get_data(G_OBJECT(dialog), "chk_sleep");
+        GtkWidget *chk_lock   = g_object_get_data(G_OBJECT(dialog), "chk_lock");
         
         const char *new_addr = gtk_entry_get_text(GTK_ENTRY(entry_addr));
         int new_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(entry_intv));
         bool new_log = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_log));
         bool new_sleep = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_sleep));
+        bool new_lock = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_lock));
         
         strncpy(g_config.address, new_addr, sizeof(g_config.address) - 1);
         g_config.address[sizeof(g_config.address) - 1] = '\0';
         g_config.interval = new_interval;
         g_config.log_enabled = new_log;
         
-        bool sleep_changed = (g_config.sleep_detection_enabled != new_sleep);
-        g_config.sleep_detection_enabled = new_sleep;
+        bool sdbus_reinit = (g_config.sleep_detection_enabled != new_sleep) ||
+                            (g_config.lock_detection_enabled != new_lock);
         
-        if (sleep_changed) {
+        g_config.sleep_detection_enabled = new_sleep;
+        g_config.lock_detection_enabled = new_lock;
+        
+        if (sdbus_reinit) {
             init_sdbus();
         }
         
@@ -270,12 +434,16 @@ static void on_open_config(void)
     GtkWidget *chk_sleep = gtk_check_button_new_with_label("Detect Sleep/Suspension (D-Bus)");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_sleep), g_config.sleep_detection_enabled);
     
+    GtkWidget *chk_lock = gtk_check_button_new_with_label("Detect Screen Lock (D-Bus)");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_lock), g_config.lock_detection_enabled);
+    
     gtk_grid_attach(GTK_GRID(grid), lbl_address, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_address, 1, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), lbl_interval, 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_interval, 1, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), chk_log, 1, 2, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), chk_sleep, 1, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), chk_lock, 1, 4, 1, 1);
     
     gtk_container_add(GTK_CONTAINER(content_area), grid);
     
@@ -283,6 +451,7 @@ static void on_open_config(void)
     g_object_set_data(G_OBJECT(dialog), "entry_intv", entry_interval);
     g_object_set_data(G_OBJECT(dialog), "chk_log", chk_log);
     g_object_set_data(G_OBJECT(dialog), "chk_sleep", chk_sleep);
+    g_object_set_data(G_OBJECT(dialog), "chk_lock", chk_lock);
     
     g_signal_connect(dialog, "response", G_CALLBACK(on_dialog_response), NULL);
     
