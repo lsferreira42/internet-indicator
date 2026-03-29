@@ -12,10 +12,6 @@
 #include <netinet/ip_icmp.h>
 #include <poll.h>
 
-/* ------------------------------------------------------------------ */
-/*  ICMP helpers                                                       */
-/* ------------------------------------------------------------------ */
-
 static uint16_t icmp_checksum(const void *data, size_t len)
 {
     const uint16_t *p = data;
@@ -41,15 +37,12 @@ bool ping_host(const char *host, int timeout_sec)
     addr.sin_family = AF_INET;
 
     if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
-        /* try hostname resolution */
         fprintf(stderr, "internet-indicator: invalid address %s\n", host);
         return false;
     }
 
     int fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (fd < 0) {
-        /* try SOCK_DGRAM (unprivileged ICMP, kernel >= 3.0 with
-         * net.ipv4.ping_group_range configured) */
         fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
         if (fd < 0) {
             fprintf(stderr, "internet-indicator: cannot create ICMP socket: %s\n"
@@ -59,7 +52,6 @@ bool ping_host(const char *host, int timeout_sec)
         }
     }
 
-    /* build ICMP echo request */
     struct icmphdr icmp;
     memset(&icmp, 0, sizeof(icmp));
     icmp.type             = ICMP_ECHO;
@@ -69,7 +61,6 @@ bool ping_host(const char *host, int timeout_sec)
     icmp.checksum         = 0;
     icmp.checksum         = icmp_checksum(&icmp, sizeof(icmp));
 
-    /* send */
     ssize_t n = sendto(fd, &icmp, sizeof(icmp), 0,
                        (struct sockaddr *)&addr, sizeof(addr));
     if (n < 0) {
@@ -77,24 +68,19 @@ bool ping_host(const char *host, int timeout_sec)
         return false;
     }
 
-    /* wait for reply */
     struct pollfd pfd = { .fd = fd, .events = POLLIN };
     int ret = poll(&pfd, 1, timeout_sec * 1000);
 
     if (ret <= 0) {
-        /* timeout or error */
         close(fd);
         return false;
     }
 
-    /* read reply */
     char buf[1024];
     n = recv(fd, buf, sizeof(buf), 0);
     close(fd);
 
     if (n < 0) return false;
 
-    /* for SOCK_RAW the reply includes the IP header; for SOCK_DGRAM it doesn't.
-     * We just need to verify we got *something* back from the right host. */
     return true;
 }

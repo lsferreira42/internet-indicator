@@ -4,12 +4,11 @@ A lightweight, minimal system tray indicator to monitor your internet connection
 
 ## Features
 
-- **Real-time monitoring**: Pings a user-defined host (default is `8.8.8.8`) securely using ICMP raw sockets (or UDP fallback).
-- **Sleep & Lock Detection**: Automatically pauses internet checks when the system is suspended or the screen is locked to prevent false alarms. (Requires `libsystemd`, optional).
-- **Asynchronous**: Ping happens in a separate thread, meaning the GUI will never freeze or hang.
-- **Configurable**: Right-click the icon to change the target address, ping interval, and toggle detection features on the fly.
-- **Connection Logging**: Toggable feature to record timestamped internet UP/DOWN events to standard output (or `journalctl`).
-- **Cross-compatible**: Compiles as a dynamic binary for major distributions, or fully standalone via Docker multi-stage builds.
+- Pings a specified host (default `8.8.8.8`) using ICMP (raw or datagram sockets).
+- Pauses checks during sleep or screen lock (requires `libsystemd`).
+- Runs in a separate thread to keep the GUI responsive.
+- Settings menu to configure address, interval, and logging.
+- Connection state logging (can be viewed via journalctl).
 
 ## Installation
 

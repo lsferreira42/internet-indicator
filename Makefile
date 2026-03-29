@@ -16,7 +16,7 @@ ifeq ($(shell pkg-config --exists libsystemd && echo yes),yes)
 endif
 
 SRCDIR  = src
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/tray.c
+SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/tray.c $(SRCDIR)/dbus_monitor.c $(SRCDIR)/settings_ui.c
 TARGET  = internet-indicator
 
 PREFIX       = /usr/local

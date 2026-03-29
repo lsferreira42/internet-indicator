@@ -14,8 +14,6 @@ static GtkWidget    *menu            = NULL;
 static GtkWidget    *status_item     = NULL;
 static void (*on_config_cb)(void)    = NULL;
 
-/* ------------------------------------------------------------------ */
-
 static void on_config(GtkMenuItem *item G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
     if (on_config_cb) {
@@ -44,7 +42,6 @@ bool tray_init(const char *icon_dir)
     app_indicator_set_icon(indicator, "net-good");
     app_indicator_set_title(indicator, "Internet Indicator");
 
-    /* build menu */
     menu = gtk_menu_new();
 
     status_item = gtk_menu_item_new_with_label("Checking...");
@@ -78,7 +75,6 @@ void tray_set_status(bool connected, const char *target)
         app_indicator_set_icon(indicator, "net-bad");
     }
 
-    /* update menu label */
     char label[384];
     if (connected)
         snprintf(label, sizeof(label), "✓ Connected — %s", target);

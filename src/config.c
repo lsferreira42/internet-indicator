@@ -6,14 +6,11 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
 static void build_config_path(Config *cfg) {
-  const char *home = g_get_home_dir();
-  snprintf(cfg->config_path, sizeof(cfg->config_path), "%s/%s/%s", home,
-           CONFIG_DIR, CONFIG_FILE);
+  gchar *path = g_build_filename(g_get_user_config_dir(), "internet-indicator", CONFIG_FILE, NULL);
+  strncpy(cfg->config_path, path, sizeof(cfg->config_path) - 1);
+  cfg->config_path[sizeof(cfg->config_path) - 1] = '\0';
+  g_free(path);
 }
 
 static bool ensure_dir(const char *path) {
@@ -46,12 +43,7 @@ static bool write_defaults(const char *path) {
   return true;
 }
 
-/* ------------------------------------------------------------------ */
-/*  INI parser (minimal)                                               */
-/* ------------------------------------------------------------------ */
-
 static void trim(char *s) {
-  /* trim trailing whitespace / newline */
   size_t len = strlen(s);
   while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r' ||
                      s[len - 1] == ' ' || s[len - 1] == '\t'))
@@ -63,7 +55,6 @@ static bool parse_ini(Config *cfg, const char *path) {
   if (!fp)
     return false;
 
-  /* set defaults before parsing */
   strncpy(cfg->address, DEFAULT_ADDRESS, sizeof(cfg->address) - 1);
   cfg->interval = DEFAULT_INTERVAL;
   cfg->log_enabled = DEFAULT_LOG_ENABLED;
@@ -74,7 +65,6 @@ static bool parse_ini(Config *cfg, const char *path) {
   while (fgets(line, sizeof(line), fp)) {
     trim(line);
 
-    /* skip comments and section headers */
     if (line[0] == '#' || line[0] == ';' || line[0] == '[' || line[0] == '\0')
       continue;
 
@@ -116,22 +106,17 @@ static bool parse_ini(Config *cfg, const char *path) {
   return true;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Public API                                                         */
-/* ------------------------------------------------------------------ */
-
 bool config_init(Config *cfg) {
   memset(cfg, 0, sizeof(*cfg));
   build_config_path(cfg);
 
-  /* ensure directory exists */
-  char dir[512];
-  const char *home = g_get_home_dir();
-  snprintf(dir, sizeof(dir), "%s/%s", home, CONFIG_DIR);
-  if (!ensure_dir(dir))
+  gchar *dir = g_build_filename(g_get_user_config_dir(), "internet-indicator", NULL);
+  if (!ensure_dir(dir)) {
+    g_free(dir);
     return false;
+  }
+  g_free(dir);
 
-  /* create default config if missing */
   if (!g_file_test(cfg->config_path, G_FILE_TEST_EXISTS)) {
     if (!write_defaults(cfg->config_path))
       return false;
@@ -139,7 +124,6 @@ bool config_init(Config *cfg) {
            cfg->config_path);
   }
 
-  /* parse it */
   if (!parse_ini(cfg, cfg->config_path)) {
     fprintf(stderr, "internet-indicator: failed to parse %s\n",
             cfg->config_path);
@@ -163,6 +147,13 @@ bool config_reload(Config *cfg) {
 }
 
 bool config_save(const Config *cfg) {
+  gchar *dir = g_build_filename(g_get_user_config_dir(), "internet-indicator", NULL);
+  if (!ensure_dir(dir)) {
+    g_free(dir);
+    return false;
+  }
+  g_free(dir);
+
   FILE *fp = fopen(cfg->config_path, "w");
   if (!fp) {
     fprintf(stderr, "internet-indicator: cannot save %s: %s\n",
@@ -213,8 +204,6 @@ void config_watch(Config *cfg, GCallback callback, gpointer user_data) {
     return;
   }
 
-  /* stash the user callback so we can invoke it from the GFileMonitor callback
-   */
   g_object_set_data(G_OBJECT(cfg->monitor), "user-callback",
                     (gpointer)callback);
   g_object_set_data(G_OBJECT(cfg->monitor), "user-data", user_data);
@@ -222,8 +211,7 @@ void config_watch(Config *cfg, GCallback callback, gpointer user_data) {
   cfg->monitor_handler_id = g_signal_connect(
       cfg->monitor, "changed", G_CALLBACK(on_file_changed), user_data);
 
-  /* rate-limit to avoid duplicate events */
-  g_file_monitor_set_rate_limit(cfg->monitor, 1000); /* ms */
+  g_file_monitor_set_rate_limit(cfg->monitor, 1000);
 }
 
 void config_destroy(Config *cfg) {
