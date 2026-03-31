@@ -75,7 +75,7 @@ deb: distributable
 	cp internet-indicator-standalone build/deb/internet-indicator_$(VERSION)_amd64/usr/bin/internet-indicator
 	cp internet-indicator.desktop build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications/
 	sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" packaging/internet-indicator.service > build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user/internet-indicator.service
-	dpkg-deb --build build/deb/internet-indicator_$(VERSION)_amd64
+	dpkg-deb --root-owner-group --build build/deb/internet-indicator_$(VERSION)_amd64
 	mv build/deb/internet-indicator_$(VERSION)_amd64.deb build/
 
 rpm: distributable
@@ -131,15 +131,23 @@ release: packages distributable
 	fi
 	@echo "Release process finished!"
 
+.PHONY: bump-packaging
+bump-packaging:
+	@sed -i "s/Version: .*/Version: $$(cat VERSION)/" packaging/internet-indicator.control
+	@sed -i "s/^Version:\s*.*/Version:        $$(cat VERSION)/" packaging/internet-indicator.spec
+	@sed -i "s/^ARG VERSION=.*/ARG VERSION=$$(cat VERSION)/" packaging/Dockerfile
+
 bump-version-bugfix:
 	@awk -F. '{print $$1"."$$2"."$$3+1}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+	@$(MAKE) bump-packaging
 	@echo "Bumped version to $$(cat VERSION)"
 
 bump-version-minor:
 	@awk -F. '{print $$1"."$$2+1".0"}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+	@$(MAKE) bump-packaging
 	@echo "Bumped version to $$(cat VERSION)"
 
 bump-version-major:
 	@awk -F. '{print $$1+1".0.0"}' VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+	@$(MAKE) bump-packaging
 	@echo "Bumped version to $$(cat VERSION)"
-

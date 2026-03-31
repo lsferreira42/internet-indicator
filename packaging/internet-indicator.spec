@@ -1,5 +1,5 @@
 Name:           internet-indicator
-Version:        0.1.2
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Internet connectivity indicator
 
@@ -23,3 +23,7 @@ sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" %{srcdir}/packaging/
 /usr/bin/internet-indicator
 /usr/share/applications/internet-indicator.desktop
 /usr/lib/systemd/user/internet-indicator.service
+
+%changelog
+* Mon Mar 30 2026 lsferreira42 <lsferreira42@example.com> - 0.2.0-1
+- Initial changelog
