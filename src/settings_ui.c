@@ -13,12 +13,14 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
     if (response_id == GTK_RESPONSE_ACCEPT) {
         GtkWidget *entry_addr = g_object_get_data(G_OBJECT(dialog), "entry_addr");
         GtkWidget *entry_intv = g_object_get_data(G_OBJECT(dialog), "entry_intv");
+        GtkWidget *entry_retries = g_object_get_data(G_OBJECT(dialog), "entry_retries");
         GtkWidget *chk_log    = g_object_get_data(G_OBJECT(dialog), "chk_log");
         GtkWidget *chk_sleep  = g_object_get_data(G_OBJECT(dialog), "chk_sleep");
         GtkWidget *chk_lock   = g_object_get_data(G_OBJECT(dialog), "chk_lock");
         
         const char *new_addr = gtk_entry_get_text(GTK_ENTRY(entry_addr));
         int new_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(entry_intv));
+        int new_retries = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(entry_retries));
         bool new_log = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_log));
         bool new_sleep = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_sleep));
         bool new_lock = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(chk_lock));
@@ -26,6 +28,7 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         strncpy(sd->cfg->address, new_addr, sizeof(sd->cfg->address) - 1);
         sd->cfg->address[sizeof(sd->cfg->address) - 1] = '\0';
         sd->cfg->interval = new_interval;
+        sd->cfg->max_retries = new_retries;
         sd->cfg->log_enabled = new_log;
         sd->cfg->sleep_detection_enabled = new_sleep;
         sd->cfg->lock_detection_enabled = new_lock;
@@ -64,6 +67,11 @@ void settings_ui_show(Config *cfg, void (*on_save)(void)) {
     gtk_widget_set_halign(lbl_interval, GTK_ALIGN_END);
     GtkWidget *entry_interval = gtk_spin_button_new_with_range(1, 3600, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(entry_interval), cfg->interval);
+
+    GtkWidget *lbl_retries = gtk_label_new("Max Retries (on fail):");
+    gtk_widget_set_halign(lbl_retries, GTK_ALIGN_END);
+    GtkWidget *entry_retries = gtk_spin_button_new_with_range(0, 100, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(entry_retries), cfg->max_retries);
     
     GtkWidget *chk_log = gtk_check_button_new_with_label("Enable Connection Logs");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk_log), cfg->log_enabled);
@@ -85,14 +93,17 @@ void settings_ui_show(Config *cfg, void (*on_save)(void)) {
     gtk_grid_attach(GTK_GRID(grid), entry_address, 1, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), lbl_interval, 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), entry_interval, 1, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), chk_log, 1, 2, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), chk_sleep, 1, 3, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), chk_lock, 1, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), lbl_retries, 0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), entry_retries, 1, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), chk_log, 1, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), chk_sleep, 1, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), chk_lock, 1, 5, 1, 1);
     
     gtk_container_add(GTK_CONTAINER(content_area), grid);
     
     g_object_set_data(G_OBJECT(dialog), "entry_addr", entry_address);
     g_object_set_data(G_OBJECT(dialog), "entry_intv", entry_interval);
+    g_object_set_data(G_OBJECT(dialog), "entry_retries", entry_retries);
     g_object_set_data(G_OBJECT(dialog), "chk_log", chk_log);
     g_object_set_data(G_OBJECT(dialog), "chk_sleep", chk_sleep);
     g_object_set_data(G_OBJECT(dialog), "chk_lock", chk_lock);

@@ -12,6 +12,7 @@
 #define DEFAULT_LOG_ENABLED false
 #define DEFAULT_SLEEP_DETECTION_ENABLED true
 #define DEFAULT_LOCK_DETECTION_ENABLED true
+#define DEFAULT_MAX_RETRIES 3
 
 typedef struct {
     char address[256];
@@ -19,6 +20,7 @@ typedef struct {
     bool log_enabled;       /* UP/DOWN logging toggle */
     bool sleep_detection_enabled; /* pause pings during sleep */
     bool lock_detection_enabled;  /* pause pings during screen lock */
+    int  max_retries;       /* number of consecutive failures before DOWN */
 
     /* internal */
     char          config_path[512];

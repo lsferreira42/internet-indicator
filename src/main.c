@@ -41,7 +41,7 @@ static void cleanup_standalone(void) {
 }
 #endif
 
-#define PING_TIMEOUT 2
+#define PING_TIMEOUT 4
 
 static volatile int ping_in_progress = 0;
 static int g_last_state = -1;
@@ -77,7 +77,15 @@ static gboolean on_ping_result(gpointer data) {
 
 static gpointer ping_worker(gpointer data) {
     char *addr = (char*)data;
-    bool ok = ping_host(addr, PING_TIMEOUT);
+    bool ok = false;
+    int attempts = g_config.max_retries > 0 ? g_config.max_retries : 1;
+    for (int i = 0; i < attempts; i++) {
+        ok = ping_host(addr, PING_TIMEOUT);
+        if (ok) break;
+        if (i < attempts - 1) {
+            g_usleep(1000 * 1000); // 1 second delay between retries
+        }
+    }
     g_idle_add(on_ping_result, GINT_TO_POINTER((gint)ok));
     g_free(addr);
     return NULL;
@@ -103,16 +111,15 @@ static gboolean on_ping_timer(gpointer data)
 static void on_config_changed(gpointer data)
 {
     (void)data;
-    int old_interval = g_config.interval;
     config_reload(&g_config);
 
-    if (g_config.interval != old_interval && g_timer_id) {
+    if (g_timer_id) {
         g_source_remove(g_timer_id);
-        g_timer_id = g_timeout_add_seconds((guint)g_config.interval,
-                                           on_ping_timer, NULL);
-        printf("internet-indicator: timer restarted with interval=%ds\n",
-               g_config.interval);
     }
+    g_timer_id = g_timeout_add_seconds((guint)g_config.interval,
+                                       on_ping_timer, NULL);
+    printf("internet-indicator: timer restarted with interval=%ds\n",
+           g_config.interval);
 
     on_ping_timer(NULL);
 }
@@ -207,7 +214,6 @@ int main(int argc, char *argv[])
     }
 
     resolve_icon_dir();
-    printf("internet-indicator: icon dir = %s\n", g_icon_dir);
 
     if (!tray_init(g_icon_dir)) {
         fprintf(stderr, "internet-indicator: tray initialization failed\n");

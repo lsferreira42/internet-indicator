@@ -54,10 +54,11 @@ bool ping_host(const char *host, int timeout_sec)
 
     struct icmphdr icmp;
     memset(&icmp, 0, sizeof(icmp));
+    static uint16_t seq = 1;
     icmp.type             = ICMP_ECHO;
     icmp.code             = 0;
     icmp.un.echo.id       = htons((uint16_t)(getpid() & 0xffff));
-    icmp.un.echo.sequence = htons(1);
+    icmp.un.echo.sequence = htons(seq++);
     icmp.checksum         = 0;
     icmp.checksum         = icmp_checksum(&icmp, sizeof(icmp));
 

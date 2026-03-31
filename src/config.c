@@ -33,10 +33,11 @@ static bool write_defaults(const char *path) {
           "[settings]\n"
           "address=%s\n"
           "interval=%d\n"
+          "max_retries=%d\n"
           "log_enabled=%s\n"
           "sleep_detection_enabled=%s\n"
           "lock_detection_enabled=%s\n",
-          DEFAULT_ADDRESS, DEFAULT_INTERVAL, DEFAULT_LOG_ENABLED ? "true" : "false",
+          DEFAULT_ADDRESS, DEFAULT_INTERVAL, DEFAULT_MAX_RETRIES, DEFAULT_LOG_ENABLED ? "true" : "false",
           DEFAULT_SLEEP_DETECTION_ENABLED ? "true" : "false",
           DEFAULT_LOCK_DETECTION_ENABLED ? "true" : "false");
   fclose(fp);
@@ -57,6 +58,7 @@ static bool parse_ini(Config *cfg, const char *path) {
 
   strncpy(cfg->address, DEFAULT_ADDRESS, sizeof(cfg->address) - 1);
   cfg->interval = DEFAULT_INTERVAL;
+  cfg->max_retries = DEFAULT_MAX_RETRIES;
   cfg->log_enabled = DEFAULT_LOG_ENABLED;
   cfg->sleep_detection_enabled = DEFAULT_SLEEP_DETECTION_ENABLED;
   cfg->lock_detection_enabled = DEFAULT_LOCK_DETECTION_ENABLED;
@@ -84,6 +86,10 @@ static bool parse_ini(Config *cfg, const char *path) {
       int v = atoi(value);
       if (v > 0)
         cfg->interval = v;
+    } else if (strcmp(key, "max_retries") == 0) {
+      int v = atoi(value);
+      if (v >= 0)
+        cfg->max_retries = v;
     } else if (strcmp(key, "log_enabled") == 0) {
       if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0)
         cfg->log_enabled = true;
@@ -130,8 +136,8 @@ bool config_init(Config *cfg) {
     return false;
   }
 
-  printf("internet-indicator: target=%s  interval=%ds\n", cfg->address,
-         cfg->interval);
+  printf("internet-indicator: target=%s  interval=%ds  max_retries=%d\n", cfg->address,
+         cfg->interval, cfg->max_retries);
   return true;
 }
 
@@ -141,8 +147,8 @@ bool config_reload(Config *cfg) {
             cfg->config_path);
     return false;
   }
-  printf("internet-indicator: config reloaded → target=%s  interval=%ds\n",
-         cfg->address, cfg->interval);
+  printf("internet-indicator: config reloaded → target=%s  interval=%ds  max_retries=%d\n",
+         cfg->address, cfg->interval, cfg->max_retries);
   return true;
 }
 
@@ -164,10 +170,11 @@ bool config_save(const Config *cfg) {
           "[settings]\n"
           "address=%s\n"
           "interval=%d\n"
+          "max_retries=%d\n"
           "log_enabled=%s\n"
           "sleep_detection_enabled=%s\n"
           "lock_detection_enabled=%s\n",
-          cfg->address, cfg->interval, cfg->log_enabled ? "true" : "false",
+          cfg->address, cfg->interval, cfg->max_retries, cfg->log_enabled ? "true" : "false",
           cfg->sleep_detection_enabled ? "true" : "false",
           cfg->lock_detection_enabled ? "true" : "false");
   fclose(fp);
