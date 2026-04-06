@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "ping.h"
+#include "http_check.h"
 #include "tray.h"
 #include "settings_ui.h"
 
@@ -49,6 +50,13 @@ static void cleanup_standalone(void) {
 static volatile int ping_in_progress = 0;
 static int g_last_state = -1;
 
+/* Return the "target" label for the current mode */
+static const char *current_target(void) {
+    if (g_config.check_mode == CHECK_MODE_HTTP)
+        return g_config.http_url;
+    return g_config.address;
+}
+
 static void log_state_change(bool ok) {
     if (!g_config.log_enabled) return;
     
@@ -58,16 +66,16 @@ static void log_state_change(bool ok) {
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
     
     if (ok) {
-        printf("[%s] STATUS: Internet is UP (%s)\n", buf, g_config.address);
+        printf("[%s] STATUS: Internet is UP (%s)\n", buf, current_target());
     } else {
-        printf("[%s] STATUS: Internet is DOWN (%s)\n", buf, g_config.address);
+        printf("[%s] STATUS: Internet is DOWN (%s)\n", buf, current_target());
     }
     fflush(stdout);
 }
 
 static gboolean on_ping_result(gpointer data) {
     bool ok = GPOINTER_TO_INT(data);
-    tray_set_status(ok, g_config.address);
+    tray_set_status(ok, current_target());
     
     if (g_last_state == -1 || g_last_state != (int)ok) {
         log_state_change(ok);
@@ -78,19 +86,42 @@ static gboolean on_ping_result(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
+/* Worker data passed to the ping thread */
+typedef struct {
+    CheckMode mode;
+    char      address[256];
+    int       max_retries;
+    int       retry_delay;
+    /* HTTP fields */
+    char      http_url[512];
+    int       http_port;
+    bool      http_verify_ssl;
+    char      http_acceptable_codes[256];
+    char      http_headers[2048];
+    char      http_method[16];
+    int       http_timeout;
+} WorkerData;
+
 static gpointer ping_worker(gpointer data) {
-    char *addr = (char*)data;
+    WorkerData *wd = (WorkerData *)data;
     bool ok = false;
-    int attempts = g_config.max_retries > 0 ? g_config.max_retries : 1;
+    int attempts = wd->max_retries > 0 ? wd->max_retries : 1;
+
     for (int i = 0; i < attempts; i++) {
-        ok = ping_host(addr, PING_TIMEOUT);
+        if (wd->mode == CHECK_MODE_HTTP) {
+            ok = http_check_host(wd->http_url, wd->http_port, wd->http_verify_ssl,
+                                  wd->http_acceptable_codes, wd->http_headers,
+                                  wd->http_method, wd->http_timeout);
+        } else {
+            ok = ping_host(wd->address, PING_TIMEOUT);
+        }
         if (ok) break;
         if (i < attempts - 1) {
-            g_usleep(1000 * 1000); // 1 second delay between retries
+            g_usleep((gulong)wd->retry_delay * 1000 * 1000);
         }
     }
     g_idle_add(on_ping_result, GINT_TO_POINTER((gint)ok));
-    g_free(addr);
+    g_free(wd);
     return NULL;
 }
 
@@ -106,8 +137,22 @@ static gboolean on_ping_timer(gpointer data)
         return G_SOURCE_CONTINUE;
     }
     g_atomic_int_set(&ping_in_progress, 1);
-    char *addr = g_strdup(g_config.address);
-    g_thread_unref(g_thread_new("ping", ping_worker, addr));
+
+    /* Snapshot config into worker data */
+    WorkerData *wd = g_new0(WorkerData, 1);
+    wd->mode = g_config.check_mode;
+    snprintf(wd->address, sizeof(wd->address), "%s", g_config.address);
+    wd->max_retries = g_config.max_retries;
+    wd->retry_delay = g_config.retry_delay;
+    snprintf(wd->http_url, sizeof(wd->http_url), "%s", g_config.http_url);
+    wd->http_port = g_config.http_port;
+    wd->http_verify_ssl = g_config.http_verify_ssl;
+    snprintf(wd->http_acceptable_codes, sizeof(wd->http_acceptable_codes), "%s", g_config.http_acceptable_codes);
+    snprintf(wd->http_headers, sizeof(wd->http_headers), "%s", g_config.http_headers);
+    snprintf(wd->http_method, sizeof(wd->http_method), "%s", g_config.http_method);
+    wd->http_timeout = g_config.http_timeout;
+
+    g_thread_unref(g_thread_new("ping", ping_worker, wd));
     return G_SOURCE_CONTINUE;
 }
 

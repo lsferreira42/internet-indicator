@@ -15,15 +15,42 @@ ifeq ($(shell pkg-config --exists libsystemd && echo yes),yes)
   LDFLAGS += $(shell pkg-config --libs libsystemd)
 endif
 
+ifeq ($(shell pkg-config --exists libcurl && echo yes),yes)
+  CFLAGS  += $(shell pkg-config --cflags libcurl) -DHAVE_LIBCURL
+  LDFLAGS += $(shell pkg-config --libs libcurl)
+endif
+
 SRCDIR  = src
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/tray.c $(SRCDIR)/dbus_monitor.c $(SRCDIR)/settings_ui.c
+SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/http_check.c $(SRCDIR)/tray.c $(SRCDIR)/dbus_monitor.c $(SRCDIR)/settings_ui.c
 TARGET  = internet-indicator
 
 PREFIX       = /usr/local
 INSTALL_BIN  = $(PREFIX)/bin
 INSTALL_DATA = $(PREFIX)/share/internet-indicator
 
-.PHONY: all clean install uninstall autostart
+.PHONY: all clean install uninstall autostart help
+
+help:
+	@echo "Available targets:"
+	@echo "  all                  - Build the application"
+	@echo "  clean                - Remove build artifacts"
+	@echo "  install              - Install application and systemd service"
+	@echo "  uninstall            - Remove installed files"
+	@echo "  autostart            - Install desktop file to ~/.config/autostart"
+	@echo "  distributable        - Build standalone binary (embedded icons)"
+	@echo ""
+	@echo "Packaging:"
+	@echo "  deb                  - Build Debian package (.deb)"
+	@echo "  rpm                  - Build RPM package (.rpm)"
+	@echo "  apk                  - Build Alpine package (.apk)"
+	@echo "  docker               - Build minimal Docker image"
+	@echo "  packages             - Build all packages"
+	@echo "  release              - Create GitHub release and upload packages"
+	@echo ""
+	@echo "Version Bumping:"
+	@echo "  bump-version-bugfix  - Bump patch version (x.y.Z+1)"
+	@echo "  bump-version-minor   - Bump minor version (x.Y+1.0)"
+	@echo "  bump-version-major   - Bump major version (X+1.0.0)"
 
 all: $(TARGET)
 
