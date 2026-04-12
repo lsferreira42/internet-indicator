@@ -5,6 +5,7 @@ A blazing-fast, ultra-lightweight system tray app written in pure C (GTK3 / _App
 I built this because I was tired of second-guessing if my ISP was dropping packets or if my VPN was acting up, and I needed hard proof without keeping a terminal open running `ping` all day. It sits quietly in your tray, tracks your real-time latency, and logs every dropout directly into a searchable UI.
 
 ### Why this over a bash script?
+- **Because I wanted to** its a good exercise to learn C and GTK3.
 - **Zero bloat.** It runs on negligible RAM footprint.
 - **Multithreading done right.** Network requests run in a detached thread behind a `GMutex` lock. The UI never freezes, even if DNS resolution hangs.
 - **No false positives.** Hooks into Linux D-Bus (`logind`) to automatically pause checks while your system sleeps or is screen-locked.
@@ -12,7 +13,7 @@ I built this because I was tired of second-guessing if my ISP was dropping packe
 
 ---
 
-## 🚀 Key Features (v1.0)
+## 🚀 Key Features
 
 - **Dual Checking Engines:**
   - **ICMP Mode:** Smart datagram ping (`SOCK_DGRAM`) with full hostname resolution (`getaddrinfo`) and strict sequence matching. No root/`sudo` needed if CAP_NET_RAW is applied!
