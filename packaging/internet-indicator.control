@@ -1,9 +1,9 @@
 Package: internet-indicator
-Version: 0.4.0
+Version: 0.5.0
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0, libappindicator3-1
+Depends: libgtk-3-0, libappindicator3-1, libnotify4
 Maintainer: lsferreira42 <lsferreira42@example.com>
 Description: Internet connectivity indicator
  Internet indicator app for system tray.

@@ -22,6 +22,11 @@ ifeq ($(shell pkg-config --exists libcurl && echo yes),yes)
   LDFLAGS += $(shell pkg-config --libs libcurl)
 endif
 
+ifeq ($(shell pkg-config --exists libnotify && echo yes),yes)
+  CFLAGS  += $(shell pkg-config --cflags libnotify) -DHAVE_LIBNOTIFY
+  LDFLAGS += $(shell pkg-config --libs libnotify)
+endif
+
 SRCDIR  = src
 SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/http_check.c $(SRCDIR)/tray.c $(SRCDIR)/dbus_monitor.c $(SRCDIR)/settings_ui.c
 TARGET  = internet-indicator

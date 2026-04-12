@@ -98,12 +98,9 @@ static void log_state_change(bool ok) {
 
 #ifdef HAVE_LIBNOTIFY
 static void send_notification(bool connected, const char *target) {
-    g_mutex_lock(&g_config_mutex);
     if (!g_config.notify_enabled) {
-        g_mutex_unlock(&g_config_mutex);
         return;
     }
-    g_mutex_unlock(&g_config_mutex);
     notify_init("Internet Indicator");
     NotifyNotification *n = notify_notification_new(
         connected ? "Internet Connected" : "Internet Disconnected",
@@ -128,9 +125,7 @@ static gboolean on_ping_result(gpointer data) {
     if (g_last_state == -1 || g_last_state != (int)ok) {
         log_state_change(ok);
 #ifdef HAVE_LIBNOTIFY
-        g_mutex_lock(&g_config_mutex);
         send_notification(ok, current_target());
-        g_mutex_unlock(&g_config_mutex);
 #endif
         g_last_state = (int)ok;
     }

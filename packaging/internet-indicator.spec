@@ -1,12 +1,13 @@
 Name:           internet-indicator
-Version:        0.4.0
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Internet connectivity indicator
 
 License:        MIT
 URL:            https://github.com/lsferreira42/internet-indicator
 
-Requires:       gtk3 >= 3.0, libappindicator-gtk3
+BuildRequires:  make, gcc, gtk3-devel, libappindicator-gtk3-devel, systemd-devel, libcurl-devel, libnotify-devel
+Requires:       gtk3 >= 3.0, libappindicator-gtk3, libnotify
 
 %description
 System tray internet connectivity indicator.

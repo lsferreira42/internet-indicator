@@ -1,71 +1,81 @@
-# Internet Indicator
+# Internet Indicator 🌐
 
-A lightweight, minimal system tray indicator to monitor your internet connection. Written in C with GTK3 and AppIndicator.
+A blazing-fast, ultra-lightweight system tray app written in pure C (GTK3 / _AppIndicator_) that constantly monitors your internet connection. 
 
-## Features
+I built this because I was tired of second-guessing if my ISP was dropping packets or if my VPN was acting up, and I needed hard proof without keeping a terminal open running `ping` all day. It sits quietly in your tray, tracks your real-time latency, and logs every dropout directly into a searchable UI.
 
-- Pings a specified host (default `8.8.8.8`) using ICMP (raw or datagram sockets).
-- Pauses checks during sleep or screen lock (requires `libsystemd`).
-- Runs in a separate thread to keep the GUI responsive.
-- Settings menu to configure address, interval, and logging.
-- Connection state logging (viewable via the internal Logs tab or log files).
+### Why this over a bash script?
+- **Zero bloat.** It runs on negligible RAM footprint.
+- **Multithreading done right.** Network requests run in a detached thread behind a `GMutex` lock. The UI never freezes, even if DNS resolution hangs.
+- **No false positives.** Hooks into Linux D-Bus (`logind`) to automatically pause checks while your system sleeps or is screen-locked.
+- **Embedded Assets.** Can compile the icons directly into the C binary — single standalone executable.
 
-## Installation
+---
+
+## 🚀 Key Features (v1.0)
+
+- **Dual Checking Engines:**
+  - **ICMP Mode:** Smart datagram ping (`SOCK_DGRAM`) with full hostname resolution (`getaddrinfo`) and strict sequence matching. No root/`sudo` needed if CAP_NET_RAW is applied!
+  - **HTTP Mode:** Powered by `libcurl`. Want to ping a captive portal or a localized intranet endpoint? Configure custom headers, methods (GET/HEAD/POST), toggle SSL verification, and specify accepted status codes (e.g., `200,301`).
+- **Live Latency Tooltips:** Hover your tray to instantly see your latency via `CLOCK_MONOTONIC` metrics (e.g., `✓ Connected — ping.example.com (14ms)`). 
+- **Desktop Notifications:** Native `libnotify` integration. Get an immediate system popup the second your network drops or recovers.
+- **Auditable Connection Logs:** Built-in log rotation (configure size in KB). The Settings dialog contains a **Logs Tab** with a fully searchable UI (`GtkTreeView`) so you can pinpoint exactly when your connection failed to complain to your ISP.
+- **Robust Error Diagnostics:** Any socket, HTTP, or DNS failures aren't just thrown to `stderr`, they're piped directly into your UI tray as an error row.
+
+---
+
+## 📦 Installation
 
 ### Distro Packages
-You can build native packages for your system. We currently support DEB, RPM, and Alpine APKs.
+We currently support DEB, RPM, and Alpine APK packaging right out of the box via the `Makefile`.
 
 ```bash
-# To build a Debian package (Ubuntu, Mint, Debian)
+# Ubuntu, Mint, Debian
 make deb
 
-# To build an RPM package (Fedora, RHEL, openSUSE)
+# Fedora, RHEL, openSUSE
 make rpm
 
-# To build an Alpine package via a reproducible Docker container
+# Alpine (via reproducible Docker container)
 make apk
 ```
-
-The generated packages will be placed inside the `build/` directory. You can install them locally via `dpkg -i`, `rpm -i`, or `apk add --allow-untrusted`.
+The generated packages are tossed into the `build/` directory.
 
 ### Building from Source
-If you just want a portable, standalone binary to run without polluting your package manager:
+Just want a portable binary to throw in your `~/bin` folder without polluting your package manager?
 
 ```bash
-# Compiles a standalone executable with icons embedded as C arrays
+# Compiles a standalone executable with icons embedded directly as C arrays
 make distributable
 
 # Run it directly
 ./internet-indicator-standalone
 ```
 
-### Autostart
-To ensure the indicator boots up automatically with your desktop environment:
+### System Integration
+Install globally to applications menu and systemd background service:
+
+```bash
+sudo make install
+```
+*(This automatically adds the `.desktop` file to your app launcher and sets `CAP_NET_RAW` permissions).*
+
+To ensure the indicator boots up automatically on startup:
 ```bash
 make autostart
 ```
 
-### Systemd Service (Background Daemon)
-The application includes native integration as a graphical user service. If you install via packages or `make install`, the service file is placed automatically.
+---
 
-Enable and start the service tied to your user session (no `sudo` required):
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now internet-indicator.service
+## 🛠️ Development & Tooling
 
-# View connection state logs from UI Settings Logs tab or log file
-# (if log_enabled=true in settings)
-```
+This project ships with heavy Makefile automation tailored for CICD and package maintainers:
 
-## Permissions
-Internet Indicator needs raw socket access for ICMP pings. If you install it via `make install` or through the provided packages, `setcap cap_net_raw+ep` is automatically applied, allowing the binary to run safely without `sudo`.
+- `make docker`: Builds an ultra-minimal Alpine container running the indicator (under `<35MB`).
+- `make clean`: Clears all build artifacts.
+- `make bump-version-[bugfix|minor|major]`: Automatically bumps the `VERSION` file and securely updates the `.control`, `.spec`, and Dockerfile packaging metadata.
 
-## Development
-
-- `make build`: builds the binary dynamically linked to your local GTK/AppIndicator environment.
-- `make docker`: builds an ultra-minimal Alpine container running the indicator (under `<35MB`).
-- `make clean`: clears all build artifacts.
-- Submitting updates? Bump versions using `make bump-version-bugfix`, `make bump-version-minor`, or `make bump-version-major`.
+---
 
 ## License
-MIT
+MIT. PRs and forks are extremely welcome.
