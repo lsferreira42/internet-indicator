@@ -37,6 +37,9 @@ typedef struct {
     bool log_enabled;       /* UP/DOWN logging toggle */
     bool sleep_detection_enabled; /* pause pings during sleep */
     bool lock_detection_enabled;  /* pause pings during screen lock */
+    bool notify_enabled;    /* desktop notifications toggle */
+    char log_file_path[512];/* output path for .log */
+    int  log_max_size_kb;   /* max log file size for rotation */
     int  max_retries;       /* number of consecutive failures before DOWN */
     int  retry_delay;       /* seconds to wait between retries */
 

@@ -12,6 +12,7 @@
 static AppIndicator *indicator       = NULL;
 static GtkWidget    *menu            = NULL;
 static GtkWidget    *status_item     = NULL;
+static GtkWidget    *error_item      = NULL;
 static void (*on_config_cb)(void)    = NULL;
 
 static void on_config(GtkMenuItem *item G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
@@ -47,6 +48,11 @@ bool tray_init(const char *icon_dir)
     status_item = gtk_menu_item_new_with_label("Checking...");
     gtk_widget_set_sensitive(status_item, FALSE);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), status_item);
+    
+    error_item = gtk_menu_item_new_with_label("");
+    gtk_widget_set_sensitive(error_item, FALSE);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), error_item);
+    gtk_widget_set_no_show_all(error_item, TRUE);
 
     GtkWidget *sep = gtk_separator_menu_item_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), sep);
@@ -65,7 +71,7 @@ bool tray_init(const char *icon_dir)
     return true;
 }
 
-void tray_set_status(bool connected, const char *target)
+void tray_set_status(bool connected, const char *target, double latency_ms)
 {
     if (!indicator) return;
 
@@ -76,12 +82,27 @@ void tray_set_status(bool connected, const char *target)
     }
 
     char label[384];
-    if (connected)
-        snprintf(label, sizeof(label), "✓ Connected — %s", target);
-    else
+    if (connected) {
+        if (latency_ms >= 0)
+            snprintf(label, sizeof(label), "✓ Connected — %s (%.0fms)", target, latency_ms);
+        else
+            snprintf(label, sizeof(label), "✓ Connected — %s", target);
+    } else {
         snprintf(label, sizeof(label), "✗ Disconnected — %s", target);
+    }
 
     gtk_menu_item_set_label(GTK_MENU_ITEM(status_item), label);
+}
+
+void tray_set_error(const char *error_msg)
+{
+    if (!error_item) return;
+    if (error_msg && error_msg[0] != '\0') {
+        gtk_menu_item_set_label(GTK_MENU_ITEM(error_item), error_msg);
+        gtk_widget_show(error_item);
+    } else {
+        gtk_widget_hide(error_item);
+    }
 }
 
 void tray_set_config_callback(void (*cb)(void))

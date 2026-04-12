@@ -8,7 +8,7 @@ A lightweight, minimal system tray indicator to monitor your internet connection
 - Pauses checks during sleep or screen lock (requires `libsystemd`).
 - Runs in a separate thread to keep the GUI responsive.
 - Settings menu to configure address, interval, and logging.
-- Connection state logging (can be viewed via journalctl).
+- Connection state logging (viewable via the internal Logs tab or log files).
 
 ## Installation
 
@@ -53,8 +53,8 @@ Enable and start the service tied to your user session (no `sudo` required):
 systemctl --user daemon-reload
 systemctl --user enable --now internet-indicator.service
 
-# View connection state logs (if log_enabled=true in settings)
-journalctl --user -u internet-indicator.service -f
+# View connection state logs from UI Settings Logs tab or log file
+# (if log_enabled=true in settings)
 ```
 
 ## Permissions

@@ -1,6 +1,8 @@
 VERSION := $(shell cat VERSION)
 APPINDICATOR_PKG ?= $(shell pkg-config --exists ayatana-appindicator3-0.1 && echo ayatana-appindicator3-0.1 || echo appindicator3-0.1)
 
+.DEFAULT_GOAL := all
+
 CC      = gcc
 CFLAGS  ?= -Wall -Wextra -O2
 CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 $(APPINDICATOR_PKG) 2>/dev/null)

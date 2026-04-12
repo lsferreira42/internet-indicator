@@ -2,6 +2,8 @@
 #include <gtk/gtk.h>
 #include <string.h>
 
+static GtkWidget *s_settings_dialog = NULL;
+
 typedef struct {
     Config *cfg;
     void (*on_save)(void);
@@ -25,6 +27,13 @@ typedef struct {
     GtkWidget *chk_log;
     GtkWidget *chk_sleep;
     GtkWidget *chk_lock;
+    GtkWidget *chk_notify;
+    GtkWidget *entry_log_path;
+    GtkWidget *spin_log_size;
+    /* Log tab widgets */
+    GtkListStore *log_store;
+    GtkTreeModel *log_filter;
+    GtkWidget *log_filter_entry;
 } SettingsData;
 
 /* ---------- mutual exclusion between ICMP / HTTP enabled ---------- */
@@ -123,6 +132,12 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         sd->cfg->log_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(sd->chk_log));
         sd->cfg->sleep_detection_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(sd->chk_sleep));
         sd->cfg->lock_detection_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(sd->chk_lock));
+        sd->cfg->notify_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(sd->chk_notify));
+        sd->cfg->log_max_size_kb = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(sd->spin_log_size));
+        
+        const char *new_log_path = gtk_entry_get_text(GTK_ENTRY(sd->entry_log_path));
+        strncpy(sd->cfg->log_file_path, new_log_path, sizeof(sd->cfg->log_file_path) - 1);
+        sd->cfg->log_file_path[sizeof(sd->cfg->log_file_path) - 1] = '\0';
 
         /* ICMP fields */
         const char *new_addr = gtk_entry_get_text(GTK_ENTRY(sd->entry_addr));
@@ -152,14 +167,95 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         snprintf(sd->cfg->http_headers, sizeof(sd->cfg->http_headers), "%s", sd->http_headers);
 
         config_save(sd->cfg);
-
         if (sd->on_save) {
             sd->on_save();
         }
     }
     
     g_free(sd);
+    s_settings_dialog = NULL;
     gtk_widget_destroy(GTK_WIDGET(dialog));
+}
+
+/* ---------- Logs Tab Filtering ---------- */
+
+static void on_log_filter_changed(GtkSearchEntry *entry G_GNUC_UNUSED, gpointer user_data) {
+    SettingsData *sd = (SettingsData *)user_data;
+    if (sd->log_filter) {
+        gtk_tree_model_filter_refilter(GTK_TREE_MODEL_FILTER(sd->log_filter));
+    }
+}
+
+static gboolean log_filter_func(GtkTreeModel *model, GtkTreeIter *iter, gpointer data) {
+    SettingsData *sd = (SettingsData *)data;
+    const gchar *search_text = gtk_entry_get_text(GTK_ENTRY(sd->log_filter_entry));
+    if (!search_text || search_text[0] == '\0') return TRUE;
+
+    gchar *row_text;
+    gtk_tree_model_get(model, iter, 0, &row_text, -1);
+    if (!row_text) return FALSE;
+
+    gboolean match = FALSE;
+    gchar *lower_row = g_utf8_strdown(row_text, -1);
+    gchar *lower_search = g_utf8_strdown(search_text, -1);
+    if (lower_row && lower_search && strstr(lower_row, lower_search) != NULL) {
+        match = TRUE;
+    }
+    if (lower_row) g_free(lower_row);
+    if (lower_search) g_free(lower_search);
+    g_free(row_text);
+    return match;
+}
+
+static GtkWidget *build_logs_tab(SettingsData *sd) {
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_set_border_width(GTK_CONTAINER(vbox), 15);
+
+    /* Search entry */
+    sd->log_filter_entry = gtk_search_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(sd->log_filter_entry), "Search logs by date or text...");
+    g_signal_connect(sd->log_filter_entry, "search-changed", G_CALLBACK(on_log_filter_changed), sd);
+    gtk_box_pack_start(GTK_BOX(vbox), sd->log_filter_entry, FALSE, FALSE, 0);
+
+    /* Scrolled Window */
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_box_pack_start(GTK_BOX(vbox), scroll, TRUE, TRUE, 0);
+
+    /* List Store */
+    sd->log_store = gtk_list_store_new(1, G_TYPE_STRING);
+    
+    /* Load file into store */
+    FILE *f = fopen(sd->cfg->log_file_path, "r");
+    if (f) {
+        char line[512];
+        while (fgets(line, sizeof(line), f)) {
+            size_t len = strlen(line);
+            if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
+            GtkTreeIter iter;
+            gtk_list_store_append(sd->log_store, &iter);
+            gtk_list_store_set(sd->log_store, &iter, 0, line, -1);
+        }
+        fclose(f);
+    }
+
+    /* Filter Model */
+    sd->log_filter = gtk_tree_model_filter_new(GTK_TREE_MODEL(sd->log_store), NULL);
+    gtk_tree_model_filter_set_visible_func(GTK_TREE_MODEL_FILTER(sd->log_filter), log_filter_func, sd, NULL);
+
+    /* Tree View */
+    GtkWidget *tree = gtk_tree_view_new_with_model(sd->log_filter);
+    g_object_unref(sd->log_store);
+    g_object_unref(sd->log_filter);
+
+    GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+    GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes("Connection Events", renderer, "text", 0, NULL);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(tree), col);
+
+    gtk_container_add(GTK_CONTAINER(scroll), tree);
+
+    return vbox;
 }
 
 /* ---------- build the Global tab ---------- */
@@ -199,15 +295,36 @@ static GtkWidget *build_global_tab(SettingsData *sd) {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(sd->chk_log), sd->cfg->log_enabled);
     gtk_grid_attach(GTK_GRID(grid), sd->chk_log, 0, 3, 2, 1);
 
+    /* Notify */
+    sd->chk_notify = gtk_check_button_new_with_label("Enable Desktop Notifications");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(sd->chk_notify), sd->cfg->notify_enabled);
+    gtk_grid_attach(GTK_GRID(grid), sd->chk_notify, 0, 4, 2, 1);
+
     /* Sleep detection */
     sd->chk_sleep = gtk_check_button_new_with_label("Detect Sleep/Suspension (D-Bus)");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(sd->chk_sleep), sd->cfg->sleep_detection_enabled);
-    gtk_grid_attach(GTK_GRID(grid), sd->chk_sleep, 0, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), sd->chk_sleep, 0, 5, 2, 1);
 
     /* Lock detection */
     sd->chk_lock = gtk_check_button_new_with_label("Detect Screen Lock (D-Bus)");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(sd->chk_lock), sd->cfg->lock_detection_enabled);
-    gtk_grid_attach(GTK_GRID(grid), sd->chk_lock, 0, 5, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), sd->chk_lock, 0, 6, 2, 1);
+
+    /* Log Path */
+    GtkWidget *lbl_lpath = gtk_label_new("Log Path:");
+    gtk_widget_set_halign(lbl_lpath, GTK_ALIGN_END);
+    sd->entry_log_path = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(sd->entry_log_path), sd->cfg->log_file_path);
+    gtk_grid_attach(GTK_GRID(grid), lbl_lpath, 0, 7, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), sd->entry_log_path, 1, 7, 1, 1);
+
+    /* Log Size */
+    GtkWidget *lbl_lsize = gtk_label_new("Max Log Size (KB):");
+    gtk_widget_set_halign(lbl_lsize, GTK_ALIGN_END);
+    sd->spin_log_size = gtk_spin_button_new_with_range(1, 102400, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(sd->spin_log_size), sd->cfg->log_max_size_kb);
+    gtk_grid_attach(GTK_GRID(grid), lbl_lsize, 0, 8, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), sd->spin_log_size, 1, 8, 1, 1);
 
 #ifndef HAVE_LIBSYSTEMD
     gtk_widget_set_sensitive(sd->chk_sleep, FALSE);
@@ -331,6 +448,11 @@ static GtkWidget *build_http_tab(SettingsData *sd) {
 /* ---------- public function ---------- */
 
 void settings_ui_show(Config *cfg, void (*on_save)(void)) {
+    if (s_settings_dialog) {
+        gtk_window_present(GTK_WINDOW(s_settings_dialog));
+        return;
+    }
+
     SettingsData *sd = g_new0(SettingsData, 1);
     sd->cfg = cfg;
     sd->on_save = on_save;
@@ -343,6 +465,7 @@ void settings_ui_show(Config *cfg, void (*on_save)(void)) {
                                                      "_Cancel", GTK_RESPONSE_CANCEL,
                                                      "_Save", GTK_RESPONSE_ACCEPT,
                                                      NULL);
+    s_settings_dialog = dialog;
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 480);
 
     GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
@@ -358,6 +481,9 @@ void settings_ui_show(Config *cfg, void (*on_save)(void)) {
 
     GtkWidget *http_tab = build_http_tab(sd);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), http_tab, gtk_label_new("HTTP"));
+
+    GtkWidget *logs_tab = build_logs_tab(sd);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), logs_tab, gtk_label_new("Logs"));
 
     gtk_container_add(GTK_CONTAINER(content_area), notebook);
 

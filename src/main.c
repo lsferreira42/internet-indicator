@@ -21,9 +21,14 @@
 #include <time.h>
 #include <stdbool.h>
 
+#ifdef HAVE_LIBNOTIFY
+#include <libnotify/notify.h>
+#endif
+
 static Config  g_config;
 static guint   g_timer_id    = 0;
 static char    g_icon_dir[PATH_MAX];
+static GMutex  g_config_mutex;
 
 #ifdef STANDALONE
 #include "icons_embedded.h"
@@ -65,23 +70,72 @@ static void log_state_change(bool ok) {
     char buf[64];
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
     
-    if (ok) {
-        printf("[%s] STATUS: Internet is UP (%s)\n", buf, current_target());
-    } else {
-        printf("[%s] STATUS: Internet is DOWN (%s)\n", buf, current_target());
+    char msg[1024];
+    g_mutex_lock(&g_config_mutex);
+    snprintf(msg, sizeof(msg), "[%s] STATUS: Internet is %s (%s)", buf, ok ? "UP" : "DOWN", current_target());
+    
+    FILE *f = fopen(g_config.log_file_path, "a");
+    if (!f) {
+        gchar *dir = g_path_get_dirname(g_config.log_file_path);
+        g_mkdir_with_parents(dir, 0755);
+        g_free(dir);
+        f = fopen(g_config.log_file_path, "a");
     }
-    fflush(stdout);
+    
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        if (ftell(f) > g_config.log_max_size_kb * 1024) {
+            fclose(f);
+            f = fopen(g_config.log_file_path, "w");
+        }
+        if (f) {
+            fprintf(f, "%s\n", msg);
+            fclose(f);
+        }
+    }
+    g_mutex_unlock(&g_config_mutex);
 }
 
+#ifdef HAVE_LIBNOTIFY
+static void send_notification(bool connected, const char *target) {
+    g_mutex_lock(&g_config_mutex);
+    if (!g_config.notify_enabled) {
+        g_mutex_unlock(&g_config_mutex);
+        return;
+    }
+    g_mutex_unlock(&g_config_mutex);
+    notify_init("Internet Indicator");
+    NotifyNotification *n = notify_notification_new(
+        connected ? "Internet Connected" : "Internet Disconnected",
+        target,
+        connected ? "network-idle" : "network-offline"
+    );
+    notify_notification_set_urgency(n, connected ? NOTIFY_URGENCY_LOW : NOTIFY_URGENCY_CRITICAL);
+    notify_notification_show(n, NULL);
+    g_object_unref(n);
+}
+#endif
+
 static gboolean on_ping_result(gpointer data) {
-    bool ok = GPOINTER_TO_INT(data);
-    tray_set_status(ok, current_target());
+    PingResult *pr = (PingResult *)data;
+    bool ok = pr->ok;
+
+    g_mutex_lock(&g_config_mutex);
+    tray_set_status(ok, current_target(), pr->latency_ms);
+    tray_set_error(pr->error_msg);
+    g_mutex_unlock(&g_config_mutex);
     
     if (g_last_state == -1 || g_last_state != (int)ok) {
         log_state_change(ok);
+#ifdef HAVE_LIBNOTIFY
+        g_mutex_lock(&g_config_mutex);
+        send_notification(ok, current_target());
+        g_mutex_unlock(&g_config_mutex);
+#endif
         g_last_state = (int)ok;
     }
     
+    g_free(pr);
     g_atomic_int_set(&ping_in_progress, 0);
     return G_SOURCE_REMOVE;
 }
@@ -104,23 +158,25 @@ typedef struct {
 
 static gpointer ping_worker(gpointer data) {
     WorkerData *wd = (WorkerData *)data;
-    bool ok = false;
+    PingResult pr = { false, -1.0, "" };
     int attempts = wd->max_retries > 0 ? wd->max_retries : 1;
 
     for (int i = 0; i < attempts; i++) {
         if (wd->mode == CHECK_MODE_HTTP) {
-            ok = http_check_host(wd->http_url, wd->http_port, wd->http_verify_ssl,
+            pr = http_check_host(wd->http_url, wd->http_port, wd->http_verify_ssl,
                                   wd->http_acceptable_codes, wd->http_headers,
                                   wd->http_method, wd->http_timeout);
         } else {
-            ok = ping_host(wd->address, PING_TIMEOUT);
+            pr = ping_host(wd->address, PING_TIMEOUT);
         }
-        if (ok) break;
+        if (pr.ok) break;
         if (i < attempts - 1) {
             g_usleep((gulong)wd->retry_delay * 1000 * 1000);
         }
     }
-    g_idle_add(on_ping_result, GINT_TO_POINTER((gint)ok));
+    PingResult *heap_pr = g_new(PingResult, 1);
+    *heap_pr = pr;
+    g_idle_add(on_ping_result, heap_pr);
     g_free(wd);
     return NULL;
 }
@@ -138,6 +194,7 @@ static gboolean on_ping_timer(gpointer data)
     }
     g_atomic_int_set(&ping_in_progress, 1);
 
+    g_mutex_lock(&g_config_mutex);
     /* Snapshot config into worker data */
     WorkerData *wd = g_new0(WorkerData, 1);
     wd->mode = g_config.check_mode;
@@ -151,6 +208,7 @@ static gboolean on_ping_timer(gpointer data)
     snprintf(wd->http_headers, sizeof(wd->http_headers), "%s", g_config.http_headers);
     snprintf(wd->http_method, sizeof(wd->http_method), "%s", g_config.http_method);
     wd->http_timeout = g_config.http_timeout;
+    g_mutex_unlock(&g_config_mutex);
 
     g_thread_unref(g_thread_new("ping", ping_worker, wd));
     return G_SOURCE_CONTINUE;
@@ -159,7 +217,9 @@ static gboolean on_ping_timer(gpointer data)
 static void on_config_changed(gpointer data)
 {
     (void)data;
+    g_mutex_lock(&g_config_mutex);
     config_reload(&g_config);
+    g_mutex_unlock(&g_config_mutex);
 
     if (g_timer_id) {
         g_source_remove(g_timer_id);
@@ -243,18 +303,33 @@ static void resolve_icon_dir(void)
     g_icon_dir[sizeof(g_icon_dir) - 1] = '\0';
 }
 
+static volatile sig_atomic_t g_quit_requested = 0;
+
 static void on_signal(int sig)
 {
     (void)sig;
-    gtk_main_quit();
+    g_quit_requested = 1;
+}
+
+static gboolean check_quit(gpointer data)
+{
+    (void)data;
+    if (g_quit_requested) gtk_main_quit();
+    return G_SOURCE_CONTINUE;
 }
 
 int main(int argc, char *argv[])
 {
     gtk_init(&argc, &argv);
 
-    signal(SIGINT,  on_signal);
-    signal(SIGTERM, on_signal);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = on_signal;
+    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    g_timeout_add(200, check_quit, NULL);
+
+    g_mutex_init(&g_config_mutex);
 
     if (!config_init(&g_config)) {
         fprintf(stderr, "internet-indicator: config initialization failed\n");

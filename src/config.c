@@ -37,6 +37,9 @@ static bool write_defaults(const char *path) {
           "log_enabled=%s\n"
           "sleep_detection_enabled=%s\n"
           "lock_detection_enabled=%s\n"
+          "notify_enabled=%s\n"
+          "log_file_path=%s\n"
+          "log_max_size_kb=%d\n"
           "\n"
           "[icmp]\n"
           "enabled=true\n"
@@ -55,6 +58,9 @@ static bool write_defaults(const char *path) {
           DEFAULT_LOG_ENABLED ? "true" : "false",
           DEFAULT_SLEEP_DETECTION_ENABLED ? "true" : "false",
           DEFAULT_LOCK_DETECTION_ENABLED ? "true" : "false",
+          "true", /* notify_enabled default */
+          "~/.local/share/internet-indicator/connection.log", /* log_file_path default */
+          1024, /* log_max_size_kb default */
           DEFAULT_ADDRESS,
           DEFAULT_HTTP_URL, DEFAULT_HTTP_PORT,
           DEFAULT_HTTP_VERIFY_SSL ? "true" : "false",
@@ -116,6 +122,11 @@ static bool parse_ini(Config *cfg, const char *path) {
   cfg->log_enabled = DEFAULT_LOG_ENABLED;
   cfg->sleep_detection_enabled = DEFAULT_SLEEP_DETECTION_ENABLED;
   cfg->lock_detection_enabled = DEFAULT_LOCK_DETECTION_ENABLED;
+  cfg->notify_enabled = true;
+  /* resolve ~/.local path */
+  const char *home = g_get_home_dir();
+  snprintf(cfg->log_file_path, sizeof(cfg->log_file_path), "%s/.local/share/internet-indicator/connection.log", home);
+  cfg->log_max_size_kb = 1024;
   cfg->check_mode = DEFAULT_CHECK_MODE;
 
   strncpy(cfg->http_url, DEFAULT_HTTP_URL, sizeof(cfg->http_url) - 1);
@@ -168,10 +179,22 @@ static bool parse_ini(Config *cfg, const char *path) {
         if (v > 0) cfg->retry_delay = v;
       } else if (strcmp(key, "log_enabled") == 0) {
         cfg->log_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
-      } else if (strcmp(key, "sleep_detection_enabled") == 0) {
-        cfg->sleep_detection_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
       } else if (strcmp(key, "lock_detection_enabled") == 0) {
         cfg->lock_detection_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
+      } else if (strcmp(key, "notify_enabled") == 0) {
+        cfg->notify_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
+      } else if (strcmp(key, "log_file_path") == 0) {
+        /* expand ~ to home dir */
+        if (value[0] == '~') {
+            const char *home = g_get_home_dir();
+            snprintf(cfg->log_file_path, sizeof(cfg->log_file_path), "%s%s", home, value + 1);
+        } else {
+            strncpy(cfg->log_file_path, value, sizeof(cfg->log_file_path) - 1);
+            cfg->log_file_path[sizeof(cfg->log_file_path) - 1] = '\0';
+        }
+      } else if (strcmp(key, "log_max_size_kb") == 0) {
+        int v = atoi(value);
+        if (v > 0) cfg->log_max_size_kb = v;
       }
     } else if (section == SECTION_ICMP) {
       if (strcmp(key, "enabled") == 0) {
@@ -284,6 +307,9 @@ bool config_save(const Config *cfg) {
           "log_enabled=%s\n"
           "sleep_detection_enabled=%s\n"
           "lock_detection_enabled=%s\n"
+          "notify_enabled=%s\n"
+          "log_file_path=%s\n"
+          "log_max_size_kb=%d\n"
           "\n"
           "[icmp]\n"
           "enabled=%s\n"
@@ -302,6 +328,9 @@ bool config_save(const Config *cfg) {
           cfg->log_enabled ? "true" : "false",
           cfg->sleep_detection_enabled ? "true" : "false",
           cfg->lock_detection_enabled ? "true" : "false",
+          cfg->notify_enabled ? "true" : "false",
+          cfg->log_file_path,
+          cfg->log_max_size_kb,
           cfg->check_mode == CHECK_MODE_ICMP ? "true" : "false",
           cfg->address,
           cfg->check_mode == CHECK_MODE_HTTP ? "true" : "false",

@@ -70,14 +70,16 @@ static struct curl_slist *parse_headers(const char *headers)
     return list;
 }
 
-bool http_check_host(const char *url, int port, bool verify_ssl,
+PingResult http_check_host(const char *url, int port, bool verify_ssl,
                      const char *acceptable_codes, const char *headers,
                      const char *method, int timeout_sec)
 {
+    PingResult result = { false, -1.0, "" };
     CURL *curl = curl_easy_init();
     if (!curl) {
-        fprintf(stderr, "internet-indicator: failed to init libcurl\n");
-        return false;
+        snprintf(result.error_msg, sizeof(result.error_msg), "Failed to init libcurl");
+        fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+        return result;
     }
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -113,34 +115,39 @@ bool http_check_host(const char *url, int port, bool verify_ssl,
 
     CURLcode res = curl_easy_perform(curl);
 
-    bool ok = false;
     if (res == CURLE_OK) {
         long response_code = 0;
+        double total_time = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-        ok = is_code_acceptable(response_code, acceptable_codes);
+        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total_time);
+        result.ok = is_code_acceptable(response_code, acceptable_codes);
+        if (result.ok) {
+            result.latency_ms = total_time * 1000.0;
+        }
     } else {
-        fprintf(stderr, "internet-indicator: HTTP check failed: %s\n",
-                curl_easy_strerror(res));
+        snprintf(result.error_msg, sizeof(result.error_msg), "HTTP check failed: %s", curl_easy_strerror(res));
+        fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
     }
 
     if (header_list) curl_slist_free_all(header_list);
     curl_easy_cleanup(curl);
-    return ok;
+    return result;
 }
 
 #else /* !HAVE_LIBCURL */
 
 #include <stdio.h>
 
-bool http_check_host(const char *url, int port, bool verify_ssl,
+PingResult http_check_host(const char *url, int port, bool verify_ssl,
                      const char *acceptable_codes, const char *headers,
                      const char *method, int timeout_sec)
 {
     (void)url; (void)port; (void)verify_ssl;
     (void)acceptable_codes; (void)headers;
     (void)method; (void)timeout_sec;
-    fprintf(stderr, "internet-indicator: HTTP check not available (built without libcurl)\n");
-    return false;
+    PingResult result = { false, -1.0, "HTTP check not available (built without libcurl)" };
+    fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+    return result;
 }
 
 #endif /* HAVE_LIBCURL */
