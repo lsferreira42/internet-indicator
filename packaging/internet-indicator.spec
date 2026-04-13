@@ -1,5 +1,5 @@
 Name:           internet-indicator
-Version:        0.5.0
+Version:        0.6.0
 Release:        1%{?dist}
 Summary:        Internet connectivity indicator
 
