@@ -86,43 +86,54 @@ PingResult ping_host(const char *host, int timeout_sec)
         return result;
     }
 
-    struct pollfd pfd = { .fd = fd, .events = POLLIN };
-    int ret = poll(&pfd, 1, timeout_sec * 1000);
+    struct timespec t_end;
+    clock_gettime(CLOCK_MONOTONIC, &t_end);
+    long time_left_ms = timeout_sec * 1000;
 
-    if (ret <= 0) {
-        close(fd);
-        return result;
-    }
+    while (time_left_ms > 0) {
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        int ret = poll(&pfd, 1, time_left_ms);
 
-    char buf[1024];
-    n = recv(fd, buf, sizeof(buf), 0);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    close(fd);
+        if (ret <= 0) {
+            break; // timeout or error
+        }
 
-    if (n < 0) return result;
+        char buf[1024];
+        n = recv(fd, buf, sizeof(buf), 0);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        
+        if (n >= 0) {
+            struct icmphdr *reply = NULL;
+            if (n >= (ssize_t)(sizeof(struct iphdr) + sizeof(struct icmphdr))) {
+                struct iphdr *ip = (struct iphdr *)buf;
+                if (ip->version == 4 && ip->protocol == IPPROTO_ICMP) {
+                    if (n >= (ssize_t)(ip->ihl * 4 + sizeof(struct icmphdr))) {
+                        reply = (struct icmphdr *)(buf + (ip->ihl * 4));
+                    }
+                }
+            }
+            if (!reply && n >= (ssize_t)sizeof(struct icmphdr)) {
+                reply = (struct icmphdr *)buf;
+            }
 
-    struct icmphdr *reply = NULL;
-    if (n >= (ssize_t)(sizeof(struct iphdr) + sizeof(struct icmphdr))) {
-        struct iphdr *ip = (struct iphdr *)buf;
-        if (ip->version == 4 && ip->protocol == IPPROTO_ICMP) {
-            if (n >= (ssize_t)(ip->ihl * 4 + sizeof(struct icmphdr))) {
-                reply = (struct icmphdr *)(buf + (ip->ihl * 4));
+            if (reply && reply->type == ICMP_ECHOREPLY) {
+                bool match_id = is_dgram || (reply->un.echo.id == htons((uint16_t)(getpid() & 0xffff)));
+                if (match_id && reply->un.echo.sequence == htons(current_seq)) {
+                    result.ok = true;
+                    result.latency_ms = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
+                    break;
+                }
             }
         }
-    }
-    if (!reply && n >= (ssize_t)sizeof(struct icmphdr)) {
-        reply = (struct icmphdr *)buf;
+
+        // recalculate time left
+        struct timespec t_now;
+        clock_gettime(CLOCK_MONOTONIC, &t_now);
+        long elapsed_ms = (t_now.tv_sec - t0.tv_sec) * 1000 + (t_now.tv_nsec - t0.tv_nsec) / 1000000;
+        time_left_ms = (timeout_sec * 1000) - elapsed_ms;
     }
 
-    if (!reply) return result;
-
-    if (reply->type == ICMP_ECHOREPLY) {
-        bool match_id = is_dgram || (reply->un.echo.id == htons((uint16_t)(getpid() & 0xffff)));
-        if (match_id && reply->un.echo.sequence == htons(current_seq)) {
-            result.ok = true;
-            result.latency_ms = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
-        }
-    }
+    close(fd);
 
     return result;
 }
