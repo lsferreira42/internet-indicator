@@ -14,6 +14,7 @@
 #define DEFAULT_LOCK_DETECTION_ENABLED true
 #define DEFAULT_MAX_RETRIES 3
 #define DEFAULT_RETRY_DELAY 5
+#define DEFAULT_DEBUG       false
 
 /* HTTP defaults */
 #define DEFAULT_HTTP_URL              "https://www.google.com"
@@ -35,6 +36,7 @@ typedef struct {
     char address[256];
     int  interval;          /* seconds between pings */
     bool log_enabled;       /* UP/DOWN logging toggle */
+    bool debug;             /* print to stdout when true */
     bool sleep_detection_enabled; /* pause pings during sleep */
     bool lock_detection_enabled;  /* pause pings during screen lock */
     bool notify_enabled;    /* desktop notifications toggle */

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "config.h"
+#include "logger.h"
 #include "ping.h"
 #include "http_check.h"
 #include "tray.h"
@@ -63,36 +64,8 @@ static const char *current_target(void) {
 }
 
 static void log_state_change(bool ok) {
-    if (!g_config.log_enabled) return;
-    
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-    char buf[64];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
-    
-    char msg[1024];
     g_mutex_lock(&g_config_mutex);
-    snprintf(msg, sizeof(msg), "[%s] STATUS: Internet is %s (%s)", buf, ok ? "UP" : "DOWN", current_target());
-    
-    FILE *f = fopen(g_config.log_file_path, "a");
-    if (!f) {
-        gchar *dir = g_path_get_dirname(g_config.log_file_path);
-        g_mkdir_with_parents(dir, 0755);
-        g_free(dir);
-        f = fopen(g_config.log_file_path, "a");
-    }
-    
-    if (f) {
-        fseek(f, 0, SEEK_END);
-        if (ftell(f) > g_config.log_max_size_kb * 1024) {
-            fclose(f);
-            f = fopen(g_config.log_file_path, "w");
-        }
-        if (f) {
-            fprintf(f, "%s\n", msg);
-            fclose(f);
-        }
-    }
+    log_msg(LOG_STATUS, "Internet is %s (%s)", ok ? "UP" : "DOWN", current_target());
     g_mutex_unlock(&g_config_mutex);
 }
 
@@ -221,8 +194,7 @@ static void on_config_changed(gpointer data)
     }
     g_timer_id = g_timeout_add_seconds((guint)g_config.interval,
                                        on_ping_timer, NULL);
-    printf("internet-indicator: timer restarted with interval=%ds\n",
-           g_config.interval);
+    log_msg(LOG_INFO, "timer restarted with interval=%ds", g_config.interval);
 
     on_ping_timer(NULL);
 }
@@ -327,14 +299,14 @@ int main(int argc, char *argv[])
     g_mutex_init(&g_config_mutex);
 
     if (!config_init(&g_config)) {
-        fprintf(stderr, "internet-indicator: config initialization failed\n");
+        log_msg(LOG_ERROR, "config initialization failed");
         return 1;
     }
 
     resolve_icon_dir();
 
     if (!tray_init(g_icon_dir)) {
-        fprintf(stderr, "internet-indicator: tray initialization failed\n");
+        log_msg(LOG_ERROR, "tray initialization failed");
         return 1;
     }
     tray_set_config_callback(on_open_config);
@@ -358,6 +330,6 @@ int main(int argc, char *argv[])
     dbus_monitor_cleanup();
 #endif
 
-    printf("internet-indicator: exiting\n");
+    log_msg(LOG_INFO, "exiting");
     return 0;
 }

@@ -28,7 +28,7 @@ ifeq ($(shell pkg-config --exists libnotify && echo yes),yes)
 endif
 
 SRCDIR  = src
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/ping.c $(SRCDIR)/http_check.c $(SRCDIR)/tray.c $(SRCDIR)/dbus_monitor.c $(SRCDIR)/settings_ui.c
+SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/logger.c $(SRCDIR)/ping.c $(SRCDIR)/http_check.c $(SRCDIR)/tray.c $(SRCDIR)/dbus_monitor.c $(SRCDIR)/settings_ui.c
 TARGET  = internet-indicator
 
 PREFIX       = /usr/local

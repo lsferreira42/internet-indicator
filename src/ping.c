@@ -1,4 +1,5 @@
 #include "ping.h"
+#include "logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,7 +46,7 @@ PingResult ping_host(const char *host, int timeout_sec)
         if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) {
             snprintf(result.error_msg, sizeof(result.error_msg),
                      "Cannot resolve hostname: %s", host);
-            fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+            log_msg(LOG_ERROR, "%s", result.error_msg);
             return result;
         }
         addr.sin_addr = ((struct sockaddr_in *)res->ai_addr)->sin_addr;
@@ -60,7 +61,7 @@ PingResult ping_host(const char *host, int timeout_sec)
         if (fd < 0) {
             snprintf(result.error_msg, sizeof(result.error_msg),
                      "ICMP socket failed: %s (hint: run with CAP_NET_RAW)", strerror(errno));
-            fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+            log_msg(LOG_ERROR, "%s", result.error_msg);
             return result;
         }
     }

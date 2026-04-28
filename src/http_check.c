@@ -1,4 +1,5 @@
 #include "http_check.h"
+#include "logger.h"
 
 #ifdef HAVE_LIBCURL
 
@@ -78,7 +79,7 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
     CURL *curl = curl_easy_init();
     if (!curl) {
         snprintf(result.error_msg, sizeof(result.error_msg), "Failed to init libcurl");
-        fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+        log_msg(LOG_ERROR, "%s", result.error_msg);
         return result;
     }
 
@@ -126,7 +127,7 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
         }
     } else {
         snprintf(result.error_msg, sizeof(result.error_msg), "HTTP check failed: %s", curl_easy_strerror(res));
-        fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+        log_msg(LOG_ERROR, "%s", result.error_msg);
     }
 
     if (header_list) curl_slist_free_all(header_list);
@@ -136,8 +137,6 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
 
 #else /* !HAVE_LIBCURL */
 
-#include <stdio.h>
-
 PingResult http_check_host(const char *url, int port, bool verify_ssl,
                      const char *acceptable_codes, const char *headers,
                      const char *method, int timeout_sec)
@@ -146,7 +145,7 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
     (void)acceptable_codes; (void)headers;
     (void)method; (void)timeout_sec;
     PingResult result = { false, -1.0, "HTTP check not available (built without libcurl)" };
-    fprintf(stderr, "internet-indicator: %s\n", result.error_msg);
+    log_msg(LOG_ERROR, "%s", result.error_msg);
     return result;
 }
 

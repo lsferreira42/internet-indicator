@@ -1,4 +1,5 @@
 #include "tray.h"
+#include "logger.h"
 
 #include <gtk/gtk.h>
 #ifdef HAVE_AYATANA
@@ -34,7 +35,7 @@ bool tray_init(const char *icon_dir)
                                   APP_INDICATOR_CATEGORY_COMMUNICATIONS);
 
     if (!indicator) {
-        fprintf(stderr, "internet-indicator: failed to create AppIndicator\n");
+        log_msg(LOG_ERROR, "failed to create AppIndicator");
         return false;
     }
 

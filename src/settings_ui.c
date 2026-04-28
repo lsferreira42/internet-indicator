@@ -226,7 +226,7 @@ static GtkWidget *build_logs_tab(SettingsData *sd) {
     /* List Store */
     sd->log_store = gtk_list_store_new(1, G_TYPE_STRING);
     
-    /* Load file into store */
+    /* Load file into store (newest first) */
     FILE *f = fopen(sd->cfg->log_file_path, "r");
     if (f) {
         char line[512];
@@ -234,7 +234,7 @@ static GtkWidget *build_logs_tab(SettingsData *sd) {
             size_t len = strlen(line);
             if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
             GtkTreeIter iter;
-            gtk_list_store_append(sd->log_store, &iter);
+            gtk_list_store_prepend(sd->log_store, &iter);
             gtk_list_store_set(sd->log_store, &iter, 0, line, -1);
         }
         fclose(f);

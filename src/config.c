@@ -1,4 +1,5 @@
 #include "config.h"
+#include "logger.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -15,8 +16,7 @@ static void build_config_path(Config *cfg) {
 
 static bool ensure_dir(const char *path) {
   if (g_mkdir_with_parents(path, 0755) != 0) {
-    fprintf(stderr, "internet-indicator: cannot create directory %s: %s\n",
-            path, strerror(errno));
+    log_msg(LOG_ERROR, "cannot create directory %s: %s", path, strerror(errno));
     return false;
   }
   return true;
@@ -25,8 +25,7 @@ static bool ensure_dir(const char *path) {
 static bool write_defaults(const char *path) {
   FILE *fp = fopen(path, "w");
   if (!fp) {
-    fprintf(stderr, "internet-indicator: cannot write %s: %s\n", path,
-            strerror(errno));
+    log_msg(LOG_ERROR, "cannot write %s: %s", path, strerror(errno));
     return false;
   }
   fprintf(fp,
@@ -35,6 +34,7 @@ static bool write_defaults(const char *path) {
           "max_retries=%d\n"
           "retry_delay=%d\n"
           "log_enabled=%s\n"
+          "debug=%s\n"
           "sleep_detection_enabled=%s\n"
           "lock_detection_enabled=%s\n"
           "notify_enabled=%s\n"
@@ -56,6 +56,7 @@ static bool write_defaults(const char *path) {
           "headers=%s\n",
           DEFAULT_INTERVAL, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY,
           DEFAULT_LOG_ENABLED ? "true" : "false",
+          DEFAULT_DEBUG ? "true" : "false",
           DEFAULT_SLEEP_DETECTION_ENABLED ? "true" : "false",
           DEFAULT_LOCK_DETECTION_ENABLED ? "true" : "false",
           "true", /* notify_enabled default */
@@ -120,6 +121,7 @@ static bool parse_ini(Config *cfg, const char *path) {
   cfg->max_retries = DEFAULT_MAX_RETRIES;
   cfg->retry_delay = DEFAULT_RETRY_DELAY;
   cfg->log_enabled = DEFAULT_LOG_ENABLED;
+  cfg->debug = DEFAULT_DEBUG;
   cfg->sleep_detection_enabled = DEFAULT_SLEEP_DETECTION_ENABLED;
   cfg->lock_detection_enabled = DEFAULT_LOCK_DETECTION_ENABLED;
   cfg->notify_enabled = true;
@@ -179,6 +181,8 @@ static bool parse_ini(Config *cfg, const char *path) {
         if (v > 0) cfg->retry_delay = v;
       } else if (strcmp(key, "log_enabled") == 0) {
         cfg->log_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
+      } else if (strcmp(key, "debug") == 0) {
+        cfg->debug = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
       } else if (strcmp(key, "lock_detection_enabled") == 0) {
         cfg->lock_detection_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
       } else if (strcmp(key, "notify_enabled") == 0) {
@@ -250,17 +254,22 @@ bool config_init(Config *cfg) {
   if (!g_file_test(cfg->config_path, G_FILE_TEST_EXISTS)) {
     if (!write_defaults(cfg->config_path))
       return false;
-    printf("internet-indicator: created default config at %s\n",
-           cfg->config_path);
+    log_msg(LOG_INFO, "created default config at %s", cfg->config_path);
   }
 
   if (!parse_ini(cfg, cfg->config_path)) {
-    fprintf(stderr, "internet-indicator: failed to parse %s\n",
-            cfg->config_path);
+    log_msg(LOG_ERROR, "failed to parse %s", cfg->config_path);
     return false;
   }
 
-  printf("internet-indicator: mode=%s  target=%s  interval=%ds  max_retries=%d\n",
+  /* Initialize logger with parsed config values */
+  if (cfg->log_enabled) {
+    logger_init(cfg->log_file_path, cfg->log_max_size_kb, cfg->debug);
+  } else {
+    logger_init(NULL, 0, cfg->debug);
+  }
+
+  log_msg(LOG_INFO, "mode=%s  target=%s  interval=%ds  max_retries=%d",
          cfg->check_mode == CHECK_MODE_HTTP ? "http" : "icmp",
          cfg->check_mode == CHECK_MODE_HTTP ? cfg->http_url : cfg->address,
          cfg->interval, cfg->max_retries);
@@ -269,11 +278,18 @@ bool config_init(Config *cfg) {
 
 bool config_reload(Config *cfg) {
   if (!parse_ini(cfg, cfg->config_path)) {
-    fprintf(stderr, "internet-indicator: failed to reload %s\n",
-            cfg->config_path);
+    log_msg(LOG_ERROR, "failed to reload %s", cfg->config_path);
     return false;
   }
-  printf("internet-indicator: config reloaded → mode=%s  target=%s  interval=%ds  max_retries=%d\n",
+
+  /* Re-configure logger with new settings */
+  if (cfg->log_enabled) {
+    logger_configure(cfg->log_file_path, cfg->log_max_size_kb, cfg->debug);
+  } else {
+    logger_configure(NULL, 0, cfg->debug);
+  }
+
+  log_msg(LOG_INFO, "config reloaded → mode=%s  target=%s  interval=%ds  max_retries=%d",
          cfg->check_mode == CHECK_MODE_HTTP ? "http" : "icmp",
          cfg->check_mode == CHECK_MODE_HTTP ? cfg->http_url : cfg->address,
          cfg->interval, cfg->max_retries);
@@ -290,8 +306,7 @@ bool config_save(const Config *cfg) {
 
   FILE *fp = fopen(cfg->config_path, "w");
   if (!fp) {
-    fprintf(stderr, "internet-indicator: cannot save %s: %s\n",
-            cfg->config_path, strerror(errno));
+    log_msg(LOG_ERROR, "cannot save %s: %s", cfg->config_path, strerror(errno));
     return false;
   }
 
@@ -305,6 +320,7 @@ bool config_save(const Config *cfg) {
           "max_retries=%d\n"
           "retry_delay=%d\n"
           "log_enabled=%s\n"
+          "debug=%s\n"
           "sleep_detection_enabled=%s\n"
           "lock_detection_enabled=%s\n"
           "notify_enabled=%s\n"
@@ -326,6 +342,7 @@ bool config_save(const Config *cfg) {
           "headers=%s\n",
           cfg->interval, cfg->max_retries, cfg->retry_delay,
           cfg->log_enabled ? "true" : "false",
+          cfg->debug ? "true" : "false",
           cfg->sleep_detection_enabled ? "true" : "false",
           cfg->lock_detection_enabled ? "true" : "false",
           cfg->notify_enabled ? "true" : "false",
@@ -368,8 +385,7 @@ void config_watch(Config *cfg, GCallback callback, gpointer user_data) {
   g_object_unref(file);
 
   if (!cfg->monitor) {
-    fprintf(stderr, "internet-indicator: cannot watch config: %s\n",
-            error->message);
+    log_msg(LOG_ERROR, "cannot watch config: %s", error->message);
     g_error_free(error);
     return;
   }

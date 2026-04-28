@@ -1,6 +1,8 @@
 #include "dbus_monitor.h"
 
 #ifdef HAVE_LIBSYSTEMD
+#include "logger.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,23 +26,12 @@ static int on_prepare_for_sleep(sd_bus_message *m, void *userdata, sd_bus_error 
     int r = sd_bus_message_read(m, "b", &going_down);
     if (r < 0) return r;
 
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-    char buf[64];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
-
     if (going_down) {
         g_is_sleeping = true;
-        if (g_active_config && g_active_config->log_enabled) {
-            printf("[%s] STATUS: System entering sleep mode\n", buf);
-            fflush(stdout);
-        }
+        log_msg(LOG_STATUS, "System entering sleep mode");
     } else {
         g_is_sleeping = false;
-        if (g_active_config && g_active_config->log_enabled) {
-            printf("[%s] STATUS: System awake\n", buf);
-            fflush(stdout);
-        }
+        log_msg(LOG_STATUS, "System awake");
     }
 
     return 0;
@@ -51,26 +42,15 @@ static int on_session_lock(sd_bus_message *m, void *userdata, sd_bus_error *ret_
     (void)ret_error;
     const char *member = sd_bus_message_get_member(m);
 
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-    char buf[64];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
-
     if (strcmp(member, "Lock") == 0) {
         if (!g_is_locked) {
             g_is_locked = true;
-            if (g_active_config && g_active_config->log_enabled) {
-                printf("[%s] STATUS: Screen locked\n", buf);
-                fflush(stdout);
-            }
+            log_msg(LOG_STATUS, "Screen locked");
         }
     } else if (strcmp(member, "Unlock") == 0) {
         if (g_is_locked) {
             g_is_locked = false;
-            if (g_active_config && g_active_config->log_enabled) {
-                printf("[%s] STATUS: Screen unlocked\n", buf);
-                fflush(stdout);
-            }
+            log_msg(LOG_STATUS, "Screen unlocked");
         }
     } else if (strcmp(member, "PropertiesChanged") == 0) {
         const char *interface;
@@ -89,10 +69,7 @@ static int on_session_lock(sd_bus_message *m, void *userdata, sd_bus_error *ret_
                         
                         if (g_is_locked != (bool)locked) {
                             g_is_locked = (bool)locked;
-                            if (g_active_config && g_active_config->log_enabled) {
-                                printf("[%s] STATUS: Screen %s\n", buf, locked ? "locked" : "unlocked");
-                                fflush(stdout);
-                            }
+                            log_msg(LOG_STATUS, "Screen %s", locked ? "locked" : "unlocked");
                         }
                     } else {
                         sd_bus_message_skip(m, "v");
@@ -170,10 +147,10 @@ static void init_session_lock_detection(void) {
                     g_session_path[sizeof(g_session_path) - 1] = '\0';
                 }
             } else {
-                fprintf(stderr, "internet-indicator: GetSessionByPID and GetSession failed: %s\n", error.message);
+                log_msg(LOG_ERROR, "GetSessionByPID and GetSession failed: %s", error.message);
             }
         } else {
-            fprintf(stderr, "internet-indicator: GetSessionByPID failed: %s (and XDG_SESSION_ID not set)\n", error.message);
+            log_msg(LOG_ERROR, "GetSessionByPID failed: %s (and XDG_SESSION_ID not set)", error.message);
         }
         sd_bus_error_free(&error);
     }
@@ -187,7 +164,7 @@ static void init_session_lock_detection(void) {
             "Lock",
             on_session_lock, NULL
         );
-        if (r < 0) printf("internet-indicator: failed to match Lock: %s\n", strerror(-r));
+        if (r < 0) log_msg(LOG_ERROR, "failed to match Lock: %s", strerror(-r));
 
         r = sd_bus_match_signal(
             g_bus, NULL,
@@ -197,7 +174,7 @@ static void init_session_lock_detection(void) {
             "Unlock",
             on_session_lock, NULL
         );
-        if (r < 0) printf("internet-indicator: failed to match Unlock: %s\n", strerror(-r));
+        if (r < 0) log_msg(LOG_ERROR, "failed to match Unlock: %s", strerror(-r));
 
         r = sd_bus_match_signal(
             g_bus, NULL,
@@ -207,7 +184,7 @@ static void init_session_lock_detection(void) {
             "PropertiesChanged",
             on_session_lock, NULL
         );
-        if (r < 0) printf("internet-indicator: failed to match PropertiesChanged: %s\n", strerror(-r));
+        if (r < 0) log_msg(LOG_ERROR, "failed to match PropertiesChanged: %s", strerror(-r));
 
         int locked = 0;
         r = sd_bus_get_property_trivial(g_bus, "org.freedesktop.login1", g_session_path, "org.freedesktop.login1.Session", "LockedHint", NULL, 'b', &locked);
@@ -229,7 +206,7 @@ void dbus_monitor_init(Config *cfg) {
 
     int r = sd_bus_default_system(&g_bus);
     if (r < 0) {
-        fprintf(stderr, "internet-indicator: failed to connect to system bus: %s\n", strerror(-r));
+        log_msg(LOG_ERROR, "failed to connect to system bus: %s", strerror(-r));
         return;
     }
 
@@ -244,7 +221,7 @@ void dbus_monitor_init(Config *cfg) {
         );
 
         if (r < 0) {
-            fprintf(stderr, "internet-indicator: failed to match signal: %s\n", strerror(-r));
+            log_msg(LOG_ERROR, "failed to match sleep signal: %s", strerror(-r));
         }
     }
 
