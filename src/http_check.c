@@ -7,6 +7,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+static bool is_http_url(const char *url)
+{
+    return url &&
+           (strncasecmp(url, "http://", 7) == 0 ||
+            strncasecmp(url, "https://", 8) == 0);
+}
 
 /* Discard response body */
 static size_t discard_body(void *ptr, size_t size, size_t nmemb, void *userdata)
@@ -76,6 +84,14 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
                      const char *method, int timeout_sec)
 {
     PingResult result = { false, -1.0, "" };
+
+    if (!is_http_url(url)) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "Invalid HTTP URL scheme (only http:// and https:// are allowed)");
+        log_msg(LOG_ERROR, "%s", result.error_msg);
+        return result;
+    }
+
     CURL *curl = curl_easy_init();
     if (!curl) {
         snprintf(result.error_msg, sizeof(result.error_msg), "Failed to init libcurl");
@@ -84,6 +100,13 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
     }
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+#endif
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)timeout_sec);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, (long)timeout_sec);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discard_body);

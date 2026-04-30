@@ -183,6 +183,8 @@ static bool parse_ini(Config *cfg, const char *path) {
         cfg->log_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
       } else if (strcmp(key, "debug") == 0) {
         cfg->debug = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
+      } else if (strcmp(key, "sleep_detection_enabled") == 0) {
+        cfg->sleep_detection_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
       } else if (strcmp(key, "lock_detection_enabled") == 0) {
         cfg->lock_detection_enabled = (strcmp(value, "1") == 0 || strcmp(value, "true") == 0);
       } else if (strcmp(key, "notify_enabled") == 0) {

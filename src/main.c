@@ -182,27 +182,58 @@ static gboolean on_ping_timer(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
-static void on_config_changed(gpointer data)
+static void apply_runtime_config(void)
 {
-    (void)data;
+    int interval;
+    bool log_enabled;
+    bool debug;
+    int log_max_size_kb;
+    char log_file_path[sizeof(g_config.log_file_path)];
+
     g_mutex_lock(&g_config_mutex);
-    config_reload(&g_config);
+    interval = g_config.interval;
+    log_enabled = g_config.log_enabled;
+    debug = g_config.debug;
+    log_max_size_kb = g_config.log_max_size_kb;
+    snprintf(log_file_path, sizeof(log_file_path), "%s", g_config.log_file_path);
     g_mutex_unlock(&g_config_mutex);
+
+    if (log_enabled) {
+        logger_configure(log_file_path, log_max_size_kb, debug);
+    } else {
+        logger_configure(NULL, 0, debug);
+    }
 
     if (g_timer_id) {
         g_source_remove(g_timer_id);
     }
-    g_timer_id = g_timeout_add_seconds((guint)g_config.interval,
+    g_timer_id = g_timeout_add_seconds((guint)interval,
                                        on_ping_timer, NULL);
-    log_msg(LOG_INFO, "timer restarted with interval=%ds", g_config.interval);
+    log_msg(LOG_INFO, "timer restarted with interval=%ds", interval);
+
+#ifdef HAVE_LIBSYSTEMD
+    dbus_monitor_init(&g_config);
+#endif
 
     on_ping_timer(NULL);
 }
 
+static void on_config_changed(gpointer data)
+{
+    (void)data;
+    g_mutex_lock(&g_config_mutex);
+    bool ok = config_reload(&g_config);
+    g_mutex_unlock(&g_config_mutex);
+
+    if (!ok) {
+        return;
+    }
+
+    apply_runtime_config();
+}
+
 static void on_settings_saved(void) {
-#ifdef HAVE_LIBSYSTEMD
-    dbus_monitor_init(&g_config);
-#endif
+    apply_runtime_config();
 }
 
 static void on_open_config(void)

@@ -6,15 +6,17 @@
 #include <time.h>
 #include <glib.h>
 
-static char  g_log_path[512] = "";
-static int   g_log_max_kb    = 1024;
-static bool  g_debug         = false;
+static char   g_log_path[512] = "";
+static int    g_log_max_kb    = 1024;
+static bool   g_debug         = false;
+static GMutex g_logger_mutex;
 
 void logger_init(const char *log_file_path, int log_max_size_kb, bool debug) {
     logger_configure(log_file_path, log_max_size_kb, debug);
 }
 
 void logger_configure(const char *log_file_path, int log_max_size_kb, bool debug) {
+    g_mutex_lock(&g_logger_mutex);
     if (log_file_path) {
         strncpy(g_log_path, log_file_path, sizeof(g_log_path) - 1);
         g_log_path[sizeof(g_log_path) - 1] = '\0';
@@ -23,6 +25,7 @@ void logger_configure(const char *log_file_path, int log_max_size_kb, bool debug
     }
     g_log_max_kb = log_max_size_kb > 0 ? log_max_size_kb : 1024;
     g_debug = debug;
+    g_mutex_unlock(&g_logger_mutex);
 }
 
 static const char *level_tag(LogLevel level) {
@@ -38,9 +41,10 @@ static const char *level_tag(LogLevel level) {
 void log_msg(LogLevel level, const char *fmt, ...) {
     /* Build timestamp */
     time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
+    struct tm tm_buf;
+    localtime_r(&t, &tm_buf);
     char ts[64];
-    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", tm);
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_buf);
 
     /* Build user message */
     char body[1024];
@@ -53,6 +57,8 @@ void log_msg(LogLevel level, const char *fmt, ...) {
     char line[1200];
     snprintf(line, sizeof(line), "[%s] %s: %s", ts, level_tag(level), body);
 
+    g_mutex_lock(&g_logger_mutex);
+
     /* stdout/stderr when debug is on */
     if (g_debug) {
         if (level == LOG_ERROR) {
@@ -64,7 +70,10 @@ void log_msg(LogLevel level, const char *fmt, ...) {
     }
 
     /* Write to log file */
-    if (g_log_path[0] == '\0') return;
+    if (g_log_path[0] == '\0') {
+        g_mutex_unlock(&g_logger_mutex);
+        return;
+    }
 
     FILE *f = fopen(g_log_path, "a");
     if (!f) {
@@ -85,4 +94,6 @@ void log_msg(LogLevel level, const char *fmt, ...) {
             fclose(f);
         }
     }
+
+    g_mutex_unlock(&g_logger_mutex);
 }

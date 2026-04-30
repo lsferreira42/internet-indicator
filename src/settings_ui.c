@@ -166,8 +166,7 @@ static void on_dialog_response(GtkDialog *dialog, gint response_id, gpointer use
         /* Headers */
         snprintf(sd->cfg->http_headers, sizeof(sd->cfg->http_headers), "%s", sd->http_headers);
 
-        config_save(sd->cfg);
-        if (sd->on_save) {
+        if (config_save(sd->cfg) && sd->on_save) {
             sd->on_save();
         }
     }
