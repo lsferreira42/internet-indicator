@@ -1,5 +1,5 @@
 Name:           internet-indicator
-Version:        0.6.3
+Version:        0.6.4
 Release:        1%{?dist}
 Summary:        Internet connectivity indicator
 
@@ -15,14 +15,17 @@ System tray internet connectivity indicator.
 %install
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/share/applications
+mkdir -p %{buildroot}/usr/share/icons/hicolor/22x22/apps
 mkdir -p %{buildroot}/usr/lib/systemd/user
 install -m 755 %{srcdir}/internet-indicator-standalone %{buildroot}/usr/bin/internet-indicator
 install -m 644 %{srcdir}/internet-indicator.desktop %{buildroot}/usr/share/applications/
+install -m 644 %{srcdir}/icons/net-good.png %{buildroot}/usr/share/icons/hicolor/22x22/apps/net-good.png
 sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" %{srcdir}/packaging/internet-indicator.service > %{buildroot}/usr/lib/systemd/user/internet-indicator.service
 
 %files
 /usr/bin/internet-indicator
 /usr/share/applications/internet-indicator.desktop
+/usr/share/icons/hicolor/22x22/apps/net-good.png
 /usr/lib/systemd/user/internet-indicator.service
 
 %changelog

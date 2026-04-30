@@ -26,6 +26,10 @@
 #include <libnotify/notify.h>
 #endif
 
+#ifdef HAVE_LIBCURL
+#include <curl/curl.h>
+#endif
+
 static Config  g_config;
 static guint   g_timer_id    = 0;
 static char    g_icon_dir[PATH_MAX];
@@ -55,6 +59,9 @@ static void cleanup_standalone(void) {
 
 static volatile int ping_in_progress = 0;
 static int g_last_state = -1;
+static bool g_have_last_target = false;
+static CheckMode g_last_mode = DEFAULT_CHECK_MODE;
+static char g_last_target[512] = "";
 
 /* Return the "target" label for the current mode */
 static const char *current_target(void) {
@@ -70,16 +77,39 @@ static void log_state_change(bool ok) {
 }
 
 #ifdef HAVE_LIBNOTIFY
+#define NOTIFICATION_TIMEOUT_MS 5000
+
 static void send_notification(bool connected, const char *target) {
     if (!g_config.notify_enabled) {
         return;
     }
-    notify_init("Internet Indicator");
+
+    if (!notify_is_initted()) {
+        notify_init("Internet Indicator");
+    }
+
+    const char *icon_name = connected ? "net-good" : "net-bad";
     NotifyNotification *n = notify_notification_new(
         connected ? "Internet Connected" : "Internet Disconnected",
         target,
-        connected ? "network-idle" : "network-offline"
+        icon_name
     );
+
+    gchar *icon_path = g_build_filename(g_icon_dir,
+                                        connected ? "net-good.png" : "net-bad.png",
+                                        NULL);
+    GError *error = NULL;
+    GdkPixbuf *icon = gdk_pixbuf_new_from_file(icon_path, &error);
+    if (icon) {
+        notify_notification_set_image_from_pixbuf(n, icon);
+        g_object_unref(icon);
+    } else if (error) {
+        log_msg(LOG_WARN, "failed to load notification icon %s: %s", icon_path, error->message);
+        g_error_free(error);
+    }
+    g_free(icon_path);
+
+    notify_notification_set_timeout(n, NOTIFICATION_TIMEOUT_MS);
     notify_notification_set_urgency(n, connected ? NOTIFY_URGENCY_LOW : NOTIFY_URGENCY_CRITICAL);
     notify_notification_show(n, NULL);
     g_object_unref(n);
@@ -188,6 +218,8 @@ static void apply_runtime_config(void)
     bool log_enabled;
     bool debug;
     int log_max_size_kb;
+    CheckMode mode;
+    char target[512];
     char log_file_path[sizeof(g_config.log_file_path)];
 
     g_mutex_lock(&g_config_mutex);
@@ -195,6 +227,9 @@ static void apply_runtime_config(void)
     log_enabled = g_config.log_enabled;
     debug = g_config.debug;
     log_max_size_kb = g_config.log_max_size_kb;
+    mode = g_config.check_mode;
+    snprintf(target, sizeof(target), "%s",
+             g_config.check_mode == CHECK_MODE_HTTP ? g_config.http_url : g_config.address);
     snprintf(log_file_path, sizeof(log_file_path), "%s", g_config.log_file_path);
     g_mutex_unlock(&g_config_mutex);
 
@@ -202,6 +237,17 @@ static void apply_runtime_config(void)
         logger_configure(log_file_path, log_max_size_kb, debug);
     } else {
         logger_configure(NULL, 0, debug);
+    }
+
+    if (!g_have_last_target || g_last_mode != mode || strcmp(g_last_target, target) != 0) {
+        if (g_have_last_target) {
+            log_msg(LOG_INFO, "target changed → mode=%s target=%s",
+                    mode == CHECK_MODE_HTTP ? "http" : "icmp", target);
+        }
+        g_last_mode = mode;
+        snprintf(g_last_target, sizeof(g_last_target), "%s", target);
+        g_have_last_target = true;
+        g_last_state = -1;
     }
 
     if (g_timer_id) {
@@ -316,9 +362,88 @@ static gboolean check_quit(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
+static bool string_contains_dark(const char *value)
+{
+    if (!value || value[0] == '\0') return false;
+
+    gchar *lower = g_ascii_strdown(value, -1);
+    bool has_dark = strstr(lower, "dark") != NULL;
+    g_free(lower);
+    return has_dark;
+}
+
+static void apply_system_theme_preference(void)
+{
+    GtkSettings *gtk_settings = gtk_settings_get_default();
+    if (!gtk_settings) return;
+
+    bool prefer_dark = false;
+    bool detected_preference = false;
+
+    const char *gtk_theme_env = g_getenv("GTK_THEME");
+    if (gtk_theme_env && gtk_theme_env[0] != '\0') {
+        prefer_dark = string_contains_dark(gtk_theme_env);
+        detected_preference = true;
+    }
+
+    GSettingsSchemaSource *schema_source = g_settings_schema_source_get_default();
+    if (schema_source) {
+        GSettingsSchema *schema = g_settings_schema_source_lookup(
+            schema_source, "org.gnome.desktop.interface", TRUE);
+
+        if (schema) {
+            GSettings *interface_settings = g_settings_new("org.gnome.desktop.interface");
+
+            if (g_settings_schema_has_key(schema, "color-scheme")) {
+                gchar *color_scheme = g_settings_get_string(interface_settings, "color-scheme");
+                if (g_strcmp0(color_scheme, "prefer-dark") == 0) {
+                    prefer_dark = true;
+                    detected_preference = true;
+                } else if (g_strcmp0(color_scheme, "prefer-light") == 0) {
+                    prefer_dark = false;
+                    detected_preference = true;
+                }
+                g_free(color_scheme);
+            }
+
+            if (!detected_preference && g_settings_schema_has_key(schema, "gtk-theme")) {
+                gchar *gtk_theme = g_settings_get_string(interface_settings, "gtk-theme");
+                prefer_dark = string_contains_dark(gtk_theme);
+                detected_preference = true;
+                g_free(gtk_theme);
+            }
+
+            g_object_unref(interface_settings);
+            g_settings_schema_unref(schema);
+        }
+    }
+
+    if (!detected_preference) {
+        gchar *gtk_theme_name = NULL;
+        g_object_get(gtk_settings, "gtk-theme-name", &gtk_theme_name, NULL);
+        if (gtk_theme_name) {
+            prefer_dark = string_contains_dark(gtk_theme_name);
+            detected_preference = true;
+            g_free(gtk_theme_name);
+        }
+    }
+
+    g_object_set(gtk_settings,
+                 "gtk-application-prefer-dark-theme", prefer_dark,
+                 NULL);
+}
+
 int main(int argc, char *argv[])
 {
     gtk_init(&argc, &argv);
+    apply_system_theme_preference();
+
+#ifdef HAVE_LIBCURL
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+        fprintf(stderr, "failed to initialize libcurl\n");
+        return 1;
+    }
+#endif
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
@@ -331,6 +456,9 @@ int main(int argc, char *argv[])
 
     if (!config_init(&g_config)) {
         log_msg(LOG_ERROR, "config initialization failed");
+#ifdef HAVE_LIBCURL
+        curl_global_cleanup();
+#endif
         return 1;
     }
 
@@ -338,6 +466,10 @@ int main(int argc, char *argv[])
 
     if (!tray_init(g_icon_dir)) {
         log_msg(LOG_ERROR, "tray initialization failed");
+        config_destroy(&g_config);
+#ifdef HAVE_LIBCURL
+        curl_global_cleanup();
+#endif
         return 1;
     }
     tray_set_config_callback(on_open_config);
@@ -359,6 +491,9 @@ int main(int argc, char *argv[])
     config_destroy(&g_config);
 #ifdef HAVE_LIBSYSTEMD
     dbus_monitor_cleanup();
+#endif
+#ifdef HAVE_LIBCURL
+    curl_global_cleanup();
 #endif
 
     log_msg(LOG_INFO, "exiting");

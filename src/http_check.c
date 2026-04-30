@@ -147,6 +147,12 @@ PingResult http_check_host(const char *url, int port, bool verify_ssl,
         result.ok = is_code_acceptable(response_code, acceptable_codes);
         if (result.ok) {
             result.latency_ms = total_time * 1000.0;
+        } else {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "HTTP status %ld not in acceptable codes: %s",
+                     response_code,
+                     (acceptable_codes && acceptable_codes[0]) ? acceptable_codes : "2xx/3xx");
+            log_msg(LOG_ERROR, "%s", result.error_msg);
         }
     } else {
         snprintf(result.error_msg, sizeof(result.error_msg), "HTTP check failed: %s", curl_easy_strerror(res));

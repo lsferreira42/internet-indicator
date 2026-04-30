@@ -86,8 +86,12 @@ void log_msg(LogLevel level, const char *fmt, ...) {
     if (f) {
         fseek(f, 0, SEEK_END);
         if (ftell(f) > g_log_max_kb * 1024) {
+            char rotated_path[sizeof(g_log_path) + 3];
+            snprintf(rotated_path, sizeof(rotated_path), "%s.1", g_log_path);
             fclose(f);
-            f = fopen(g_log_path, "w");
+            remove(rotated_path);
+            rename(g_log_path, rotated_path);
+            f = fopen(g_log_path, "a");
         }
         if (f) {
             fprintf(f, "%s\n", line);

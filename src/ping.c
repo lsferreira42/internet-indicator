@@ -83,26 +83,43 @@ PingResult ping_host(const char *host, int timeout_sec)
     ssize_t n = sendto(fd, &icmp, sizeof(icmp), 0,
                        (struct sockaddr *)&addr, sizeof(addr));
     if (n < 0) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "ICMP send failed: %s", strerror(errno));
+        log_msg(LOG_ERROR, "%s", result.error_msg);
         close(fd);
         return result;
     }
 
-    struct timespec t_end;
-    clock_gettime(CLOCK_MONOTONIC, &t_end);
     long time_left_ms = timeout_sec * 1000;
 
     while (time_left_ms > 0) {
         struct pollfd pfd = { .fd = fd, .events = POLLIN };
         int ret = poll(&pfd, 1, time_left_ms);
 
-        if (ret <= 0) {
-            break; // timeout or error
+        if (ret < 0) {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "ICMP poll failed: %s", strerror(errno));
+            log_msg(LOG_ERROR, "%s", result.error_msg);
+            break;
+        }
+        if (ret == 0) {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "ICMP timeout after %d seconds: %s", timeout_sec, host);
+            log_msg(LOG_ERROR, "%s", result.error_msg);
+            break;
         }
 
         char buf[1024];
         n = recv(fd, buf, sizeof(buf), 0);
         clock_gettime(CLOCK_MONOTONIC, &t1);
         
+        if (n < 0) {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "ICMP receive failed: %s", strerror(errno));
+            log_msg(LOG_ERROR, "%s", result.error_msg);
+            break;
+        }
+
         if (n >= 0) {
             struct icmphdr *reply = NULL;
             if (n >= (ssize_t)(sizeof(struct iphdr) + sizeof(struct icmphdr))) {
@@ -135,6 +152,12 @@ PingResult ping_host(const char *host, int timeout_sec)
     }
 
     close(fd);
+
+    if (!result.ok && result.error_msg[0] == '\0') {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "ICMP no matching echo reply from %s within %d seconds", host, timeout_sec);
+        log_msg(LOG_ERROR, "%s", result.error_msg);
+    }
 
     return result;
 }

@@ -16,7 +16,7 @@ WORKDIR /home/builder/source
 # Build standalone binary
 RUN make distributable
 
-ARG VERSION=0.6.3
+ARG VERSION=0.6.4
 # Create APKBUILD
 RUN echo 'pkgname=internet-indicator' > APKBUILD && \
     echo 'pkgver='${VERSION} >> APKBUILD && \
@@ -32,9 +32,11 @@ RUN echo 'pkgname=internet-indicator' > APKBUILD && \
     echo 'package() {' >> APKBUILD && \
     echo '    mkdir -p $pkgdir/usr/bin' >> APKBUILD && \
     echo '    mkdir -p $pkgdir/usr/share/applications' >> APKBUILD && \
+    echo '    mkdir -p $pkgdir/usr/share/icons/hicolor/22x22/apps' >> APKBUILD && \
     echo '    mkdir -p $pkgdir/usr/lib/systemd/user' >> APKBUILD && \
     echo '    cp internet-indicator-standalone $pkgdir/usr/bin/internet-indicator' >> APKBUILD && \
     echo '    cp internet-indicator.desktop $pkgdir/usr/share/applications/' >> APKBUILD && \
+    echo '    cp icons/net-good.png $pkgdir/usr/share/icons/hicolor/22x22/apps/net-good.png' >> APKBUILD && \
     echo '    sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" packaging/internet-indicator.service > $pkgdir/usr/lib/systemd/user/internet-indicator.service' >> APKBUILD && \
     echo '}' >> APKBUILD
 
@@ -46,4 +48,5 @@ FROM alpine:3.18 AS minimal
 RUN apk add --no-cache gtk+3.0 libayatana-appindicator libnotify
 COPY --from=builder /home/builder/source/internet-indicator-standalone /usr/bin/internet-indicator
 COPY --from=builder /home/builder/source/internet-indicator.desktop /usr/share/applications/
+COPY --from=builder /home/builder/source/icons/net-good.png /usr/share/icons/hicolor/22x22/apps/net-good.png
 CMD ["internet-indicator"]

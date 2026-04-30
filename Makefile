@@ -40,8 +40,9 @@ SOURCES = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/logger.c $(SRCDIR)/ping.
 TARGET  = internet-indicator
 
 PREFIX       = /usr/local
-INSTALL_BIN  = $(PREFIX)/bin
-INSTALL_DATA = $(PREFIX)/share/internet-indicator
+INSTALL_BIN   = $(PREFIX)/bin
+INSTALL_DATA  = $(PREFIX)/share/internet-indicator
+INSTALL_ICONS = $(PREFIX)/share/icons/hicolor/22x22/apps
 
 .PHONY: all clean install uninstall autostart help
 
@@ -85,6 +86,7 @@ install: $(TARGET)
 	sed "s|ExecStart=.*|ExecStart=$(INSTALL_BIN)/internet-indicator|" packaging/internet-indicator.service > $(DESTDIR)$(PREFIX)/lib/systemd/user/internet-indicator.service
 	install -Dm644 icons/net-good.png $(DESTDIR)$(INSTALL_DATA)/icons/net-good.png
 	install -Dm644 icons/net-bad.png  $(DESTDIR)$(INSTALL_DATA)/icons/net-bad.png
+	install -Dm644 icons/net-good.png $(DESTDIR)$(INSTALL_ICONS)/net-good.png
 	@echo "Setting CAP_NET_RAW on $(DESTDIR)$(INSTALL_BIN)/$(TARGET)..."
 	sudo setcap cap_net_raw+ep $(DESTDIR)$(INSTALL_BIN)/$(TARGET) || \
 		echo "Warning: could not set CAP_NET_RAW. Run with sudo or set manually."
@@ -94,6 +96,7 @@ uninstall:
 	rm -f  $(DESTDIR)$(PREFIX)/share/applications/internet-indicator.desktop
 	rm -f  $(DESTDIR)$(PREFIX)/lib/systemd/user/internet-indicator.service
 	rm -rf $(DESTDIR)$(INSTALL_DATA)
+	rm -f  $(DESTDIR)$(INSTALL_ICONS)/net-good.png
 	rm -f  $(HOME)/.config/autostart/internet-indicator.desktop
 
 autostart:
@@ -112,12 +115,14 @@ deb: distributable
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/bin
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications
+	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/share/icons/hicolor/22x22/apps
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user
 	cp internet-indicator-standalone build/deb/internet-indicator_$(VERSION)_amd64/usr/bin/internet-indicator
 	sed -e "s/Version: .*/Version: $(VERSION)/" \
 	    -e "s/^Depends: .*/Depends: $(DEB_DEPENDS)/" \
 	    packaging/internet-indicator.control > build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN/control
 	cp internet-indicator.desktop build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications/
+	cp icons/net-good.png build/deb/internet-indicator_$(VERSION)_amd64/usr/share/icons/hicolor/22x22/apps/net-good.png
 	sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" packaging/internet-indicator.service > build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user/internet-indicator.service
 	dpkg-deb --root-owner-group --build build/deb/internet-indicator_$(VERSION)_amd64
 	mv build/deb/internet-indicator_$(VERSION)_amd64.deb build/
