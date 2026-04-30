@@ -8,23 +8,31 @@ CFLAGS  ?= -Wall -Wextra -O2
 CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 $(APPINDICATOR_PKG) 2>/dev/null)
 LDFLAGS += $(shell pkg-config --libs gtk+-3.0 $(APPINDICATOR_PKG) 2>/dev/null)
 
+DEB_DEPENDS = libgtk-3-0
+
 ifeq ($(APPINDICATOR_PKG),ayatana-appindicator3-0.1)
   CFLAGS += -DHAVE_AYATANA
+  DEB_DEPENDS := $(DEB_DEPENDS), libayatana-appindicator3-1
+else
+  DEB_DEPENDS := $(DEB_DEPENDS), libappindicator3-1
 endif
 
 ifeq ($(shell pkg-config --exists libsystemd && echo yes),yes)
   CFLAGS  += $(shell pkg-config --cflags libsystemd) -DHAVE_LIBSYSTEMD
   LDFLAGS += $(shell pkg-config --libs libsystemd)
+  DEB_DEPENDS := $(DEB_DEPENDS), libsystemd0
 endif
 
 ifeq ($(shell pkg-config --exists libcurl && echo yes),yes)
   CFLAGS  += $(shell pkg-config --cflags libcurl) -DHAVE_LIBCURL
   LDFLAGS += $(shell pkg-config --libs libcurl)
+  DEB_DEPENDS := $(DEB_DEPENDS), libcurl4
 endif
 
 ifeq ($(shell pkg-config --exists libnotify && echo yes),yes)
   CFLAGS  += $(shell pkg-config --cflags libnotify) -DHAVE_LIBNOTIFY
   LDFLAGS += $(shell pkg-config --libs libnotify)
+  DEB_DEPENDS := $(DEB_DEPENDS), libnotify4
 endif
 
 SRCDIR  = src
@@ -105,13 +113,16 @@ deb: distributable
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/bin
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications
 	mkdir -p build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user
-	sed "s/Version: .*/Version: $(VERSION)/" packaging/internet-indicator.control > build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN/control
 	cp internet-indicator-standalone build/deb/internet-indicator_$(VERSION)_amd64/usr/bin/internet-indicator
+	sed -e "s/Version: .*/Version: $(VERSION)/" \
+	    -e "s/^Depends: .*/Depends: $(DEB_DEPENDS)/" \
+	    packaging/internet-indicator.control > build/deb/internet-indicator_$(VERSION)_amd64/DEBIAN/control
 	cp internet-indicator.desktop build/deb/internet-indicator_$(VERSION)_amd64/usr/share/applications/
 	sed "s|ExecStart=.*|ExecStart=/usr/bin/internet-indicator|" packaging/internet-indicator.service > build/deb/internet-indicator_$(VERSION)_amd64/usr/lib/systemd/user/internet-indicator.service
 	dpkg-deb --root-owner-group --build build/deb/internet-indicator_$(VERSION)_amd64
 	mv build/deb/internet-indicator_$(VERSION)_amd64.deb build/
 
+rpm: APPINDICATOR_PKG := appindicator3-0.1
 rpm: distributable
 	@echo "Building RPM..."
 	mkdir -p build/rpm/{BUILD,RPMS,SOURCES,SPECS,SRPMS}

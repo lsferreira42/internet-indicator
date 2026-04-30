@@ -16,7 +16,7 @@ WORKDIR /home/builder/source
 # Build standalone binary
 RUN make distributable
 
-ARG VERSION=0.6.1
+ARG VERSION=0.6.2
 # Create APKBUILD
 RUN echo 'pkgname=internet-indicator' > APKBUILD && \
     echo 'pkgver='${VERSION} >> APKBUILD && \

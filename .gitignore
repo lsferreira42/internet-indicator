@@ -6,3 +6,4 @@ build/
 *.rpm
 *.apk
 log.txt
+bugs.*

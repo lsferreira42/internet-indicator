@@ -14,6 +14,7 @@
 
 static sd_bus      *g_bus  = NULL;
 static sd_bus_slot *g_slot = NULL;
+static guint        g_bus_watch_id = 0;
 static bool         g_is_sleeping = false;
 static bool         g_is_locked   = false;
 static char         g_session_path[512] = "";
@@ -95,6 +96,10 @@ static gboolean sdbus_dispatch(GIOChannel *source, GIOCondition condition, gpoin
 }
 
 void dbus_monitor_cleanup(void) {
+    if (g_bus_watch_id) {
+        g_source_remove(g_bus_watch_id);
+        g_bus_watch_id = 0;
+    }
     if (g_slot) {
         sd_bus_slot_unref(g_slot);
         g_slot = NULL;
@@ -103,6 +108,8 @@ void dbus_monitor_cleanup(void) {
         sd_bus_flush_close_unref(g_bus);
         g_bus = NULL;
     }
+    g_is_sleeping = false;
+    g_is_locked = false;
     g_session_path[0] = '\0';
 }
 
@@ -230,7 +237,7 @@ void dbus_monitor_init(Config *cfg) {
     int fd = sd_bus_get_fd(g_bus);
     if (fd >= 0) {
         GIOChannel *channel = g_io_channel_unix_new(fd);
-        g_io_add_watch(channel, G_IO_IN | G_IO_HUP | G_IO_ERR, sdbus_dispatch, g_bus);
+        g_bus_watch_id = g_io_add_watch(channel, G_IO_IN | G_IO_HUP | G_IO_ERR, sdbus_dispatch, g_bus);
         g_io_channel_unref(channel);
     }
 }
