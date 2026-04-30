@@ -1,5 +1,5 @@
 Package: internet-indicator
-Version: 0.6.4
+Version: 0.6.5
 Section: utils
 Priority: optional
 Architecture: amd64
